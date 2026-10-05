@@ -1,0 +1,46 @@
+{# Helpers every logged-in page needs, included INTO each page's own
+   <script> rather than copied into it. Not a <script> of its own and not
+   served from /static: Flask's static handler answers without a session,
+   and every URL this app serves sits behind the same login gate (see
+   guide_image in app.py for the same reasoning).
+
+   These three were previously written out separately in index.html,
+   verify.html, audit.html and admin.html. The copies of esc() had already
+   drifted apart once - a comment left behind in two of them recorded that
+   the weaker version had ended up in the page rendering the most hostile
+   data. Four copies of an escape is four chances to fix three of them. #}
+        var CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').content;
+
+        function csrfHeaders(extra) {
+            return Object.assign({ 'X-CSRFToken': CSRF_TOKEN }, extra || {});
+        }
+
+        // Escapes the single quote as well as the usual four. What this runs
+        // over is written by field devices - a TAK user picks their own
+        // callsign, team, role and remarks, and chat text is whatever was
+        // typed - so it is precisely the input an attacker controls without
+        // ever having touched this tool. null and undefined both become ''
+        // rather than the word "null" appearing in a table cell.
+        function esc(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+
+        // navigator.clipboard needs a secure context (HTTPS or localhost) -
+        // same requirement as the Web Crypto hashing on /verify.
+        function copyToClipboard(text, btn) {
+            var original = btn.textContent;
+            if (!navigator.clipboard) {
+                btn.textContent = 'No HTTPS';
+                setTimeout(function () { btn.textContent = original; }, 2000);
+                return;
+            }
+            navigator.clipboard.writeText(text).then(function () {
+                btn.textContent = 'Copied!';
+                setTimeout(function () { btn.textContent = original; }, 1500);
+            }).catch(function () {
+                btn.textContent = 'Copy failed';
+                setTimeout(function () { btn.textContent = original; }, 2000);
+            });
+        }

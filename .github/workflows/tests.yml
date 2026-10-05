@@ -1,0 +1,65 @@
+name: Regression tests
+
+# Five of the eight suites in tests/ run here. All are self-contained - a
+# temp sqlite file, no live Postgres (see each module's own docstring) - so
+# they need no secrets and no external services.
+#
+# The two that are not run, and why:
+#   tests/test_db.py       needs a real TAK Server Postgres connection, which
+#                          this workflow has no access to and should not be
+#                          given one.
+#   tests/test_browser.py  needs Playwright and a downloaded Chromium. Worth
+#                          adding one day; it is the only suite covering the
+#                          Verify page's JavaScript and the page layout checks.
+#
+# The version matrix is the point of this file, not an extra. app.py's floor
+# is Python 3.10 (Ubuntu 22.04's stock interpreter) while the Dockerfile
+# runs 3.12, so both have to keep working. requirements.txt pins Flask but
+# NOT its transitive dependencies - Werkzeug, Jinja2, itsdangerous - so the
+# day one of those drops 3.10 support, pip will quietly resolve something
+# different there than it does on 3.12. This matrix is what catches that on
+# a push rather than in somebody's install.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor and the container's version. Both must pass.
+        python-version: ["3.10", "3.12"]
+    name: Tests on Python ${{ matrix.python-version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Recorded in the log so a divergence between the two interpreters is
+      # visible here rather than inferred from a test failure.
+      - name: Show resolved versions
+        run: pip freeze
+
+      - name: Query definitions and package assembly
+        run: python tests/test_exports.py
+
+      - name: Schema check
+        run: python tests/test_dbcheck.py
+
+      - name: Drawn shapes
+        run: python tests/test_shapes.py
+
+      - name: Auth, roles, sessions and the audit chain
+        run: python tests/test_auth.py
+
+      - name: Requested-for
+        run: python tests/test_requested_for.py

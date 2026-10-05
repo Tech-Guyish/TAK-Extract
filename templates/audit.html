@@ -1,0 +1,1408 @@
+<!DOCTYPE html>
+<!-- data-theme reflects the logged-in account's own preference
+     (set on /admin's Appearance panel), rendered server-side - see
+     index.html for the full rationale, and app.py's get_theme(). -->
+<html{% if theme == 'dark' %} data-theme="dark"{% elif theme == 'light' %} data-theme="light"{% endif %}>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>TAK-Extract — Audit Log</title>
+    <style>
+        /* Without this, an element with width:100% plus a border or padding
+           renders WIDER than its container (padding/border get added on top
+           of the 100%, instead of counted inside it) - a common cause of a
+           page being wider than the browser window. This makes every
+           element measure itself the way you'd expect: 100% means 100%,
+           borders and padding included. */
+        *, *::before, *::after { box-sizing: border-box; }
+
+        /* Color tokens: light values here, dark values under the media
+           query below. Every rule in this file reads a var() instead of a
+           hardcoded color. color-scheme tells the browser itself to theme
+           native controls (checkboxes, scrollbars) to match, for free. */
+        :root {
+            color-scheme: light dark;
+            --bg: #ffffff;
+            --text: #1a1a1a;
+            --text-muted: #666666;
+            --panel-bg: #f9f9f9;
+            --panel-border: #dddddd;
+            --btn-bg: #dcdcdc;
+            --btn-border: #a8a8a8;
+            --table-header-bg: #f0f0f0;
+            --table-row-alt-bg: #fafafa;
+            --accent: #2a6fdb;
+            --accent-text: #ffffff;
+            --ok: #009900;
+            --warn: #bb6600;
+            --bad: #cc0000;
+
+            /* Spacing scale - see index.html for the full rationale. Not
+               theme-dependent, so defined once here. */
+            --space-1: 4px;
+            --space-2: 8px;
+            --space-3: 12px;
+            --space-4: 16px;
+            --space-5: 20px;
+            --space-6: 24px;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #1a1a1a;
+                --text: #e8e8e8;
+                --text-muted: #aaaaaa;
+                --panel-bg: #262626;
+                --panel-border: #444444;
+                --btn-bg: #454545;
+                --btn-border: #808080;
+                --table-header-bg: #262626;
+                --table-row-alt-bg: #212121;
+                --accent: #4a8eea;
+                --accent-text: #ffffff;
+                --ok: #4caf50;
+                --warn: #ffb74d;
+                --bad: #ff6b6b;
+            }
+        }
+        /* data-theme is set server-side (see the <html> tag) from this
+           account's own preference on /admin, and takes precedence over
+           the OS preference below either way. */
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --bg: #1a1a1a; --text: #e8e8e8; --text-muted: #aaaaaa;
+            --panel-bg: #262626; --panel-border: #444444;
+            --btn-bg: #454545; --btn-border: #808080;
+            --table-header-bg: #262626; --table-row-alt-bg: #212121;
+            --accent: #4a8eea; --accent-text: #ffffff;
+            --ok: #4caf50; --warn: #ffb74d; --bad: #ff6b6b;
+        }
+        :root[data-theme="light"] {
+            color-scheme: light;
+            --bg: #ffffff; --text: #1a1a1a; --text-muted: #666666;
+            --panel-bg: #f9f9f9; --panel-border: #dddddd;
+            --btn-bg: #dcdcdc; --btn-border: #a8a8a8;
+            --table-header-bg: #f0f0f0; --table-row-alt-bg: #fafafa;
+            --accent: #2a6fdb; --accent-text: #ffffff;
+            --ok: #009900; --warn: #bb6600; --bad: #cc0000;
+        }
+        /* One bar across the window on every page. The nav is right-aligned
+           inside it, so it has to be the same box everywhere or the buttons
+           move from page to page - which they did, by 87px, because this
+           used to inherit each page's own content width. The content below
+           is centred by .pageBody rather than by <body>, so this can span
+           the full width without a 100vw trick (100vw is wider than the
+           viewport whenever there is a scrollbar). */
+        .pageHeader { display: flex; justify-content: space-between; align-items: center;
+                      flex-wrap: wrap; row-gap: var(--space-2); gap: var(--space-4);
+                      padding: var(--space-5) var(--space-4) var(--space-3); }
+        .pageBody { max-width: 1200px; margin: 0 auto;
+                    padding: 0 var(--space-4) var(--space-5); }
+        .pageHeader h1 { margin: 0; }
+        .headerActions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+
+        /* The nav is a row of button-styled links, sitting next to the
+           page title rather than its own line above it - plain text
+           links up there competed with the page name for attention. */
+        .siteNav { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+        .siteNav a, .siteNav .current {
+            display: inline-flex; align-items: center; justify-content: center;
+            height: 32px; box-sizing: border-box; padding: 0 var(--space-3);
+            font-size: 13px; border-radius: 3px; text-decoration: none;
+            border: 1px solid var(--btn-border);
+        }
+        .siteNav a { background: var(--btn-bg); color: var(--text); cursor: pointer; }
+        .siteNav a:hover { background: var(--panel-bg); }
+        .siteNav .current {
+            background: var(--accent); color: var(--accent-text); border-color: var(--accent);
+            cursor: default;
+        }
+        .whoami { font-size: 13px; color: var(--text-muted); }
+        .logoutForm { display: inline; margin: 0; }
+        /* margin: 0 matters - some pages' generic `button` rule carries a
+           margin-right, which widened this form and moved the nav with it. */
+        .logoutLink { font-size: 13px; color: var(--text); text-decoration: underline; cursor: pointer;
+                      background: none; border: 0; padding: 0; margin: 0; font-family: inherit; }
+
+        body { font-family: sans-serif; line-height: 1.5; margin: 0; background: var(--bg); color: var(--text); }
+        h1     { margin-bottom: var(--space-1); }
+        .muted { color: var(--text-muted); }
+        .mono  { font-family: monospace; font-size: 11px; }
+        .ok       { color: var(--ok); }
+        .warn     { color: var(--warn); }
+        .bad      { color: var(--bad); }
+        .unident  { color: var(--warn); font-style: italic; }
+        /* min-width as well as max: without it the Detail column's text
+           squeezed this one down to a few characters per line, making every
+           row tall. 180px at 10px monospace is four tidy lines of a SHA-256. */
+        .hash  { font-family: monospace; font-size: 11px; word-break: break-all; }
+
+        /* The log reads as a list, not a 13-column table: one line per case
+           (or per entry in flat view) that opens to show everything that
+           entry recorded, the same open-in-place idea as the Export page's
+           Preview. The old table put the two widest values - the hash and
+           the detail - permanently on screen and pushed everything else off
+           the right edge. */
+        .viewToggle { display: flex; gap: var(--space-2); align-items: center; }
+        .viewToggle button[aria-pressed="true"] { background: var(--accent); color: var(--accent-text);
+                                                  border-color: var(--accent); }
+        .listHead { display: flex; gap: var(--space-2); align-items: center; padding: var(--space-2);
+                    border-bottom: 1px solid var(--panel-border); font-size: 12px; color: var(--muted); }
+        .listHead .sortCell { cursor: pointer; user-select: none; }
+        .listHead .sortCell:hover { color: var(--text); }
+        .listHead .sortCell.activeSort { color: var(--text); font-weight: bold; }
+        .listHead .arrow { opacity: 0.4; margin-left: 3px; }
+        .listHead .sortCell.activeSort .arrow { opacity: 1; }
+        .caseGroup, .entry { border: 1px solid var(--panel-border); border-radius: 4px;
+                             background: var(--panel-bg); margin-top: var(--space-2); }
+        .caseBody .entry { border-radius: 0; border-left: 0; border-right: 0; border-bottom: 0;
+                           margin-top: 0; background: transparent; }
+        .caseLine, .entryLine { display: flex; align-items: flex-start; gap: var(--space-2);
+                                padding: var(--space-2); }
+        .caseToggle, .entryToggle { flex: 1; display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3);
+                                    align-items: baseline; text-align: left; background: none; border: 0;
+                                    padding: 0; margin: 0; cursor: pointer; color: var(--text);
+                                    font-family: inherit; font-size: 13px; }
+        .caseToggle { font-size: 14px; }
+        .caseToggle .caseName { font-weight: bold; }
+        .caret { display: inline-block; width: 1em; color: var(--muted); }
+        .entryBody, .caseBody { padding: 0 var(--space-3) var(--space-3) calc(var(--space-3) + 1em); }
+        .caseBody { padding: 0 0 0 var(--space-3); }
+        .appWide { border: 1px solid var(--panel-border); border-radius: 4px;
+                   background: var(--panel-bg); margin-top: var(--space-5); }
+        .appWideHead { padding: var(--space-2); font-weight: bold; font-size: 14px;
+                       border-bottom: 1px solid var(--panel-border); }
+        .appWide > .entry { border-radius: 0; border-left: 0; border-right: 0; border-bottom: 0;
+                            margin-top: 0; background: transparent; }
+        .extraction, .otherGroup { border-top: 1px solid var(--panel-border); }
+        .extraction:first-child, .otherGroup:first-child { border-top: 0; }
+        .extractionToggle, .otherToggle { flex: 1; display: flex; flex-wrap: wrap;
+                                          gap: var(--space-1) var(--space-3); align-items: baseline;
+                                          text-align: left; background: none; border: 0; padding: 0;
+                                          margin: 0; cursor: pointer; color: var(--text);
+                                          font-family: inherit; font-size: 13px; }
+        .extractionToggle .xName { font-weight: bold; }
+        .extractionBody, .otherBody, .extractionChildren { padding: 0 0 0 var(--space-4); }
+        .extractionChildren > .entry, .otherBody > .entry {
+            border-top: 1px solid var(--panel-border); border-left: 0; border-right: 0;
+            border-bottom: 0; margin-top: 0; }
+        /* baseline: several values start with a button, whose text sits
+           lower than the top of its box - without this the label beside it
+           reads as belonging to the line above. */
+        .entryBody dl { display: grid; grid-template-columns: max-content 1fr;
+                        gap: var(--space-1) var(--space-3); margin: 0;
+                        align-items: baseline; }
+        .entryBody dt { color: var(--muted); font-size: 12px; }
+        .entryBody dd { margin: 0; font-size: 13px; word-break: break-word; }
+        .entryBody dd.mono { font-family: monospace; font-size: 11px; }
+        .correctBtn { padding: 1px var(--space-2); font-size: 11px; margin-left: var(--space-2); }
+        .recheckBtn { padding: 1px var(--space-2); font-size: 11px; }
+        .correctForm { margin-top: var(--space-2); padding: var(--space-2); border: 1px solid var(--panel-border);
+                       background: var(--box-bg); display: flex; flex-wrap: wrap; gap: var(--space-2);
+                       align-items: center; font-size: 13px; }
+        .correctForm input { padding: var(--space-1) var(--space-2); font-size: 13px;
+                             background: var(--bg); color: var(--text); border: 1px solid var(--panel-border); }
+        .correctForm .newCase { width: 16em; }
+        .correctForm .reason { width: 22em; }
+        .correctNote { font-size: 12px; }
+        /* The detail's own clauses, as key and value rather than six
+           sentences with hashes inside them. A clause with no value spans
+           both columns so it still reads as the sentence it is. */
+        .detailGrid { display: grid; grid-template-columns: max-content 1fr;
+                      gap: 2px var(--space-3); align-items: baseline; }
+        .detailGrid .dKey { color: var(--text-muted); font-size: 12px; }
+        .detailGrid .dVal { word-break: break-word; }
+        .detailGrid .dVal.mono { font-family: monospace; font-size: 11px; word-break: break-all; }
+        .detailGrid .dSay { grid-column: 1 / -1; }
+        /* The file lists: what a package held, and what the server hashed.
+           One file per block, its name and state on the first line and its
+           hash on the second, so a 64-character value never pushes the
+           page sideways on a narrow screen. */
+        .compared { display: grid; grid-template-columns: max-content max-content 1fr;
+                    gap: 2px var(--space-3); align-items: baseline; }
+        .compared .cWhat { color: var(--text-muted); font-size: 12px; }
+        .compared .cFile { font-family: monospace; font-size: 11px; word-break: break-all; }
+        .compared .cState { font-size: 12px; }
+        .fileNote { margin-top: var(--space-2); color: var(--text-muted); font-size: 12px; }
+        .recheckBox { margin-top: var(--space-2); padding: var(--space-2);
+                      border: 1px solid var(--panel-border); background: var(--box-bg); }
+        .recheckCmd { margin: var(--space-2) 0 0; padding: var(--space-2); background: var(--code-bg, #0000000d);
+                      font-family: monospace; font-size: 11px; white-space: pre-wrap;
+                      word-break: break-all; }
+        .recheckNote { color: var(--text-muted); font-size: 12px; }
+        .recheckStatus { margin-top: var(--space-2); font-size: 12px; }
+        /* the button is the first thing in its value on an export, and
+           follows the compared block on a re-check - spaced only there, so
+           both rows keep the same rhythm as every other row. */
+        .filesToggle { padding: 2px var(--space-2); font-size: 12px; }
+        .compared + .filesToggle { margin-top: var(--space-2); }
+        .fileList { margin-top: var(--space-2); display: grid;
+                    grid-template-columns: max-content 1fr; gap: 0 var(--space-3);
+                    align-items: baseline; }
+        /* an explicit display beats the browser's own [hidden] rule, so the
+           folded list needs saying again or it is never folded. */
+        .fileList[hidden] { display: none; }
+        .fileRow { display: contents; }
+        .fName { font-family: monospace; font-size: 11px; word-break: break-all; }
+        .fState { font-size: 11px; }
+        .fHashLine { grid-column: 1 / -1; padding-bottom: var(--space-2); }
+        .fHash { font-family: monospace; font-size: 11px; word-break: break-all; }
+        @media (max-width: 640px) {
+            .entryBody dl { grid-template-columns: 1fr; }
+            .entryBody dt { margin-top: var(--space-2); }
+        }
+        button { padding: var(--space-2) var(--space-4); font-size: 14px; background: var(--btn-bg);
+                 color: var(--text); border: 1px solid var(--btn-border);
+                 border-radius: 3px; cursor: pointer; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        /* Press feedback for a plain action button - lit up for exactly
+           as long as the mouse/touch is held, same as a native :active
+           state but in this app's accent color. No toggle-style buttons
+           on this page, but the selector stays for consistency with
+           pages that have them. */
+        button:not([aria-pressed]):active { background: var(--accent); color: var(--accent-text);
+                                             border-color: var(--accent); }
+        .infoBtn { padding: 2px var(--space-2); font-size: 12px; background: var(--btn-bg);
+                   border: 1px solid var(--btn-border); border-radius: 3px; cursor: pointer; }
+        /* At the right edge, like every other page's About. */
+        .pageAbout { display: block; margin-left: auto; width: max-content; }
+        .infoBox { margin: var(--space-2) 0; padding: var(--space-2) var(--space-3); background: var(--panel-bg);
+                   border: 1px solid var(--panel-border); font-size: 13px; max-width: 700px; }
+        .copyBtn { padding: 1px 6px; font-size: 10px; margin-top: var(--space-1); }
+        #filterInput { padding: var(--space-2); font-size: 13px; background: var(--bg); color: var(--text);
+                       border: 1px solid var(--panel-border); border-radius: 3px; width: 260px; max-width: 100%; }
+        /* Three equal-ish columns (left / center / a matching empty column on
+           the right) rather than two flex children, so the filter box sits
+           at the true center of the row - centering it in just the leftover
+           space after a left-aligned pagination group would put it off to
+           one side instead. */
+        .controlsRow { display: grid; grid-template-columns: 1fr auto 1fr;
+                        align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
+        /* On a phone the three columns don't fit side by side; stack them
+           instead of letting the row push the page wider than the screen. */
+        @media (max-width: 640px) { .controlsRow { grid-template-columns: 1fr; } }
+        .paginationGroup { display: flex; align-items: center; gap: var(--space-2); }
+        .filterGroup { display: flex; justify-content: center; }
+        #filterHintRow { text-align: center; font-size: 12px; margin-top: var(--space-1); }
+        #status { font-size: 12px; }
+        /* Case / Incident and Exported For beside the download buttons -
+           the same fields the Export page has, for the same reason (see
+           the comment on that page's generate panel). */
+        .downloadRow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3);
+                       margin-top: var(--space-3); }
+        .exportField { display: flex; flex-direction: column; flex: 1 1 180px; max-width: 280px; }
+        .exportField label { font-size: 13px; }
+        .exportField input { width: 100%; box-sizing: border-box; margin: 0; padding: var(--space-2);
+                             font-size: 13px; background: var(--bg); color: var(--text);
+                             border: 1px solid var(--panel-border); border-radius: 3px; }
+        .exportField input.missing { border-color: var(--warn); }
+        .downloadBtns { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+        .downloadBtns button { margin-top: 0; }
+        #downloadHint { font-size: 12px; margin-top: var(--space-1); min-height: 1.2em; }
+    </style>
+</head>
+<body>
+    <div class="pageHeader">
+        <h1>TAK-Extract — Audit Log</h1>
+        <div class="headerActions">
+            <nav class="siteNav">
+                <a href="/">Export</a><a href="/verify">Verify &amp; Replay</a>
+                <span class="current">Audit Log</span><a href="/admin">System</a>
+                <a href="/guide" target="_blank" rel="noopener">Guide</a>
+            </nav>
+            {% if auth_mode == 'local' %}<span class="whoami">{{ username }}</span>
+            <form method="post" action="/logout" class="logoutForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="logoutLink">Log out</button></form>{% endif %}
+        </div>
+    </div>
+    <div class="pageBody">
+    <button type="button" class="infoBtn pageAbout" id="aboutBtn">ⓘ About this log</button>
+    <div class="infoBox" id="aboutBox" hidden>
+        A record of every export request: who ran it, who it was run for, what
+        parameters, when, and what happened. Contains no location data &mdash;
+        only the shape of each request.
+        <br><br>
+        <strong>Who ran it</strong> is the verified account that was logged in
+        &mdash; it cannot be typed in or altered by the requester.
+        <strong>For</strong> is typed by the operator at export time: it records
+        who they say asked for it, and is <em>not</em> verified identity. The two
+        are kept apart deliberately, so a note is never mistaken for proof.
+    </div>
+
+    <!-- Fields, not window.prompt(): see the Export page's generate panel
+         for why - a prompt answered with Enter followed by the Save As
+         dialog left the mouse pointer hidden over the page. No <form>, so
+         Enter in a field does nothing. -->
+    <div class="downloadRow">
+        <div class="exportField">
+            <label for="caseId">Case / Incident</label>
+            <input type="text" id="caseId" maxlength="120" autocomplete="off" required>
+        </div>
+        <div class="exportField">
+            <label for="exportedFor">Exported For</label>
+            <input type="text" id="exportedFor" maxlength="120" autocomplete="off" required>
+        </div>
+        <div class="downloadBtns">
+            <button id="downloadBtn">Download selected</button>
+            <button id="downloadAllBtn">Download entire log</button>
+            <button id="closeBtn" type="button">Close page</button>
+            <span id="selectionCount" class="muted"></span>
+        </div>
+    </div>
+    <div id="downloadHint" class="muted"></div>
+
+    <div class="controlsRow">
+        <div class="paginationGroup">
+            <button id="prevPageBtn" type="button">&laquo; Prev</button>
+            <span id="pageLabel" class="muted"></span>
+            <button id="nextPageBtn" type="button">Next &raquo;</button>
+        </div>
+        <div class="filterGroup">
+            <input type="text" id="filterInput" placeholder="Filter by case ID or actor...">
+        </div>
+        <div class="viewToggle">
+            <button type="button" id="byCaseBtn" aria-pressed="true">By case</button>
+            <button type="button" id="flatBtn" aria-pressed="false">Flat list</button>
+        </div>
+    </div>
+    <p class="muted" id="filterHintRow"><span id="filterHint"></span></p>
+
+    <div id="status">Loading...</div>
+    <div class="listHead" id="listHead" hidden>
+        <label><input type="checkbox" id="selectAllRows"> Select all on this page</label>
+        <span id="sortCells" hidden>
+            <span class="sortCell" data-sort="when">When <span class="arrow">&#9662;</span></span>
+            <span class="sortCell" data-sort="who">Who ran it <span class="arrow">&#9662;</span></span>
+            <span class="sortCell" data-sort="for">For <span class="arrow">&#9662;</span></span>
+            <span class="sortCell" data-sort="case">Case <span class="arrow">&#9662;</span></span>
+            <span class="sortCell" data-sort="kind">Kind <span class="arrow">&#9662;</span></span>
+            <span class="sortCell" data-sort="records">Records <span class="arrow">&#9662;</span></span>
+            <span class="sortCell" data-sort="outcome">Outcome <span class="arrow">&#9662;</span></span>
+        </span>
+    </div>
+    <div id="rows"></div>
+
+        </div>
+<script nonce="{{ csp_nonce() }}">
+        {% include "_shared.js.html" %}
+
+
+        function outcomeClass(o) {
+            if (!o) { return ''; }
+            // "with errors" before "delivered": a package where a query
+            // failed is written as "generated with errors", and a completed
+            // download appends " / delivered" to whatever was there - so
+            // "generated with errors / delivered" used to match the
+            // delivered test first and render green, for a zip whose own
+            // README says it is INCOMPLETE.
+            if (o.indexOf('with errors') !== -1) { return 'warn'; }
+            // A re-check's outcome IS the finding (see /recheck/<token>/result):
+            // "raw match" passed, "raw MISMATCH" / "raw file missing" /
+            // "raw unverified" did not. Without these the whole family fell
+            // through to amber, so a pass and a mismatch looked identical in
+            // the one column someone scans to see whether it held up.
+            if (o === 'raw match') { return 'ok'; }
+            if (o.indexOf('MISMATCH') !== -1 || o.indexOf('file missing') !== -1) { return 'bad'; }
+            if (o.indexOf('unverified') !== -1) { return 'warn'; }
+            if (o.indexOf('delivered') !== -1 || o === 'recorded' || o === 'ok') { return 'ok'; }
+            if (o.indexOf('failed') !== -1 || o.indexOf('rejected') !== -1) { return 'bad'; }
+            return 'warn';
+        }
+
+        // What each recorded kind actually was, in words. The kind itself is
+        // still shown in the opened entry ("Recorded as"), because it is what
+        // the row holds, what the downloaded CSV carries and what the hash
+        // chain covers - this is a reading of it, not a replacement.
+        var KINDS = {
+            'package':               ['Evidence package exported',
+                                      'the full package: the CSVs, the README, the hashes and the re-check script'],
+            'locations':             ['Locations export',
+                                      'positions only, as a KMZ for a map viewer'],
+            'preview':               ['File preview',
+                                      'the first five rows of one file were shown on screen'],
+            'recheck':               ['Re-check on the TAK Server',
+                                      "the package's own statements re-run on the server with psql, and its hashes posted back"],
+            'recheck-fetch':         ['TAK Server fetched the script',
+                                      "the server collected the package's queries.sql to run it"],
+            'companion':             ['Re-check file recorded by hand',
+                                      'an administrator recorded the hash of a re-check file beside its package'],
+            'recheck-issued':        ['Re-check offered again',
+                                      'an administrator asked the log for a fresh re-check of an '
+                                      + 'export made earlier'],
+            'case-correction':       ['Case reference corrected',
+                                      'nothing was rewritten - the correction is this entry'],
+            'audit-download':        ['Audit log downloaded'],
+            'admin-user-add':        ['User added'],
+            'admin-user-delete':     ['User removed'],
+            'admin-role-change':     ['Role changed'],
+            'admin-password-reset':  ['Password reset'],
+            'admin-settings-change': ['Connection settings changed'],
+            'admin-backup-download': ['Backup downloaded'],
+            'admin-restore':         ['Backup restored',
+                                      'the audit log, the accounts and the settings were replaced from a backup file']
+        };
+        function kindLabel(kind) { return (KINDS[kind] || [kind])[0]; }
+        function kindNote(kind) { return (KINDS[kind] || [])[1] || ''; }
+
+        // What the SHA-256 on this row is the hash OF. On an export it is the
+        // file that was handed over; on everything else it is the package the
+        // entry refers to, which is the single most misread value on this page.
+        function hashRole(kind) {
+            if (kind === 'package' || kind === 'locations') { return 'the file this export produced'; }
+            if (kind === 'companion') { return 'the re-check file that was recorded'; }
+            if (kind === 'audit-download') { return 'the downloaded log file'; }
+            return 'the export this entry refers to';
+        }
+
+        function whoClass(a) {
+            if (!a) { return 'unident'; }
+            if (a.indexOf('authenticated:') === 0) { return 'ok'; }
+            return 'unident';
+        }
+
+        document.getElementById('closeBtn').addEventListener('click', function () {
+            window.close();
+        });
+
+        // navigator.clipboard needs a secure context (HTTPS or localhost) -
+        // same requirement as the Web Crypto hashing on /verify. Fails
+        // visibly rather than silently, same reasoning as there.
+
+        document.getElementById('aboutBtn').addEventListener('click', function () {
+            var box = document.getElementById('aboutBox');
+            box.hidden = !box.hidden;
+        });
+
+        function updateSelectionCount() {
+            var n = document.querySelectorAll('.rowChk:checked').length;
+            document.getElementById('selectionCount').textContent =
+                n ? (n + ' row(s) selected') : 'No rows selected';
+        }
+
+        document.getElementById('selectAllRows').addEventListener('change', function () {
+            var checked = this.checked;
+            document.querySelectorAll('.rowChk').forEach(function (c) { c.checked = checked; });
+            updateSelectionCount();
+        });
+
+        document.getElementById('rows').addEventListener('change', function (e) {
+            if (e.target.classList.contains('rowChk')) { updateSelectionCount(); return; }
+            // A case's tick selects every entry in it - the usual reason to
+            // download from this page is "everything for this case".
+            // A tick at any level covers everything under it - the usual
+            // reason to download from this page is "everything for this
+            // case", or "this extraction and how it was checked".
+            var group = e.target.classList.contains('caseChk') ? e.target.closest('.caseGroup')
+                      : e.target.classList.contains('extractionChk') ? e.target.closest('.extraction')
+                      : e.target.classList.contains('otherChk') ? e.target.closest('.otherGroup')
+                      : null;
+            if (group) {
+                group.querySelectorAll('.rowChk').forEach(function (c) { c.checked = e.target.checked; });
+                updateSelectionCount();
+            }
+        });
+
+        // A case reference typed wrong at export time repeats on everything
+        // that follows it. The entry is never rewritten - case_id is part of
+        // what the chain hashes, so changing it would make the log report
+        // itself as tampered - so this records a correction as its own
+        // entry, and the page applies it when it reads the log back.
+        function correctionForm(btn) {
+            var existing = btn.parentNode.parentNode.querySelector('.correctForm');
+            if (existing) { existing.remove(); return; }
+            var scope = btn.getAttribute('data-scope');
+            var current = btn.getAttribute('data-current') || '';
+            var form = document.createElement('div');
+            form.className = 'correctForm';
+            form.innerHTML =
+                '<span>' + (scope === 'case'
+                    ? 'Correct <strong>' + esc(current) + '</strong> and every entry under it to:'
+                    : 'Correct this entry\u2019s case to:') + '</span>' +
+                '<input type="text" class="newCase" maxlength="120" placeholder="Correct case reference">' +
+                '<input type="text" class="reason" maxlength="300" placeholder="Reason (optional, recorded)">' +
+                '<button type="button" class="saveCorrection">Record correction</button>' +
+                '<button type="button" class="cancelCorrection">Cancel</button>' +
+                '<span class="correctNote muted">The original entry is never changed; this is recorded ' +
+                'as its own entry in the log.</span>';
+            btn.parentNode.parentNode.appendChild(form);
+            form.querySelector('.newCase').focus();
+            form.querySelector('.cancelCorrection').addEventListener('click', function () { form.remove(); });
+            form.querySelector('.saveCorrection').addEventListener('click', function () {
+                var body = {
+                    scope: scope,
+                    new_case: form.querySelector('.newCase').value.trim(),
+                    reason: form.querySelector('.reason').value.trim()
+                };
+                if (scope === 'case') { body.case_id = current; }
+                else { body.entry_id = parseInt(btn.getAttribute('data-id'), 10); }
+                if (!body.new_case) {
+                    form.querySelector('.correctNote').textContent = 'Enter the correct case reference.';
+                    form.querySelector('.correctNote').className = 'correctNote warn';
+                    form.querySelector('.newCase').focus();
+                    return;
+                }
+                var save = this;
+                save.disabled = true; save.textContent = 'Recording...';
+                fetch('/api/audit/correct-case', {
+                    method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(body)
+                }).then(function (r) { return r.json(); }).then(function (d) {
+                    if (d.error) {
+                        form.querySelector('.correctNote').textContent = d.error;
+                        form.querySelector('.correctNote').className = 'correctNote warn';
+                        save.disabled = false; save.textContent = 'Record correction';
+                        return;
+                    }
+                    loadAudit(1);
+                }).catch(function (err) {
+                    form.querySelector('.correctNote').textContent = 'Failed: ' + err;
+                    form.querySelector('.correctNote').className = 'correctNote bad';
+                    save.disabled = false; save.textContent = 'Record correction';
+                });
+            });
+        }
+
+        // Asking the log for a fresh re-check of an export already in it.
+        // The command is built by the server (recheck_command in app.py),
+        // which is also what the Export page's own builder must agree with.
+        var recheckPoll = null;
+        function stopRecheckPoll() {
+            if (recheckPoll) { clearInterval(recheckPoll); recheckPoll = null; }
+        }
+        function watchRecheck(token, el) {
+            stopRecheckPoll();
+            if (!token) { return; }
+            var started = Date.now();
+            el.textContent = 'Waiting for the server to fetch the script\u2026';
+            el.className = 'recheckStatus muted';
+            recheckPoll = setInterval(function () {
+                fetch('/api/recheck-progress/' + encodeURIComponent(token))
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        if (d.error) { stopRecheckPoll(); return; }
+                        if (d.results) {
+                            stopRecheckPoll();
+                            var ok = d.outcome === 'raw match';
+                            el.textContent = (ok ? '\u2713 ' : '\u2717 ') + 'Re-check recorded' +
+                                (d.when ? ' ' + d.when : '') + (d.where ? ' from ' + d.where : '') +
+                                ' - ' + (ok ? 'the raw table rows have the same hash.'
+                                            : (d.outcome || 'it did not match') + '.') +
+                                ' Reload this page to see the entry.';
+                            el.className = 'recheckStatus ' + (ok ? 'ok' : 'bad');
+                            return;
+                        }
+                        if (d.fetched) {
+                            el.textContent = 'The server fetched the script - psql is running.';
+                            el.className = 'recheckStatus muted';
+                            return;
+                        }
+                        if (Date.now() - started > 600000) { stopRecheckPoll(); }
+                    })
+                    .catch(function () { stopRecheckPoll(); });
+            }, 3000);
+        }
+        function askForRecheck(btn) {
+            var here = btn.nextElementSibling;
+            btn.disabled = true;
+            here.innerHTML = '<div class="recheckNote">Asking\u2026</div>';
+            fetch('/api/audit/recheck/' + encodeURIComponent(btn.getAttribute('data-hash')), {
+                method: 'POST',
+                headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ base: location.origin })
+            }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+              .then(function (res) {
+                btn.disabled = false;
+                if (!res.ok || !res.d.ok) {
+                    here.innerHTML = '<div class="recheckNote bad"></div>';
+                    here.firstChild.textContent = res.d.message || res.d.error || 'It could not be offered.';
+                    return;
+                }
+                var d = res.d;
+                here.innerHTML =
+                    '<div class="recheckBox">' +
+                    '<div class="recheckNote">Paste this on the TAK Server. It is good for ' +
+                        esc(d.hours) + ' hours' +
+                        (d.checked ? ', and the kept script has the hash this export recorded for it.'
+                                   : '. This export recorded no hash for its script, so there was ' +
+                                     'nothing in the log to check the kept copy against.') +
+                    '</div>' +
+                    '<pre class="recheckCmd"></pre>' +
+                    '<button type="button" class="copyBtn">Copy</button>' +
+                    '<div class="recheckStatus muted"></div></div>';
+                // textContent, not markup: the command is a shell line, and
+                // nothing in it should ever be parsed as HTML.
+                here.querySelector('.recheckCmd').textContent = d.command;
+                here.querySelector('.copyBtn').setAttribute('data-copy', d.command);
+                watchRecheck(d.token, here.querySelector('.recheckStatus'));
+            }).catch(function (err) {
+                btn.disabled = false;
+                here.innerHTML = '<div class="recheckNote bad"></div>';
+                here.firstChild.textContent = 'It could not be offered: ' + err.message;
+            });
+        }
+
+        document.getElementById('rows').addEventListener('click', function (e) {
+            if (e.target.classList.contains('copyBtn')) {
+                copyToClipboard(e.target.getAttribute('data-copy'), e.target);
+                return;
+            }
+            if (e.target.classList.contains('correctBtn')) {
+                correctionForm(e.target);
+                return;
+            }
+            if (e.target.classList.contains('recheckBtn')) {
+                askForRecheck(e.target);
+                return;
+            }
+            if (e.target.classList.contains('filesToggle')) {
+                var list = e.target.nextElementSibling;
+                var show = list.hidden;
+                list.hidden = !show;
+                e.target.setAttribute('aria-expanded', String(show));
+                e.target.textContent = e.target.textContent.replace(show ? 'Show' : 'Hide',
+                                                                    show ? 'Hide' : 'Show');
+                return;
+            }
+            // closest(): the line is a button containing several spans, so a
+            // click usually lands on one of them, not the button itself.
+            var toggle = e.target.closest('.entryToggle, .caseToggle, .extractionToggle, .otherToggle');
+            if (!toggle) { return; }
+            var body = toggle.classList.contains('caseToggle')
+                ? toggle.closest('.caseGroup').querySelector('.caseBody')
+                : toggle.classList.contains('extractionToggle')
+                    ? toggle.closest('.extraction').querySelector('.extractionBody')
+                    : toggle.classList.contains('otherToggle')
+                        ? toggle.closest('.otherGroup').querySelector('.otherBody')
+                        : toggle.closest('.entry').querySelector('.entryBody');
+            var opening = body.hidden;
+            body.hidden = !opening;
+            toggle.setAttribute('aria-expanded', String(opening));
+            toggle.querySelector('.caret').innerHTML = opening ? '&#9662;' : '&#9656;';
+        });
+
+        var currentPage = 1;
+        var totalPages = 1;
+        var currentFilter = '';
+        var currentSort = '';
+        var currentSortDir = 'desc';
+        // 'case' (the default): one line per case, opened to see its
+        // entries. 'flat': one line per entry, newest first, across every
+        // case - what the old table showed, minus the sideways scroll.
+        var view = 'case';
+
+        // ts_local is "YYYY-MM-DD HH:MM:SS <timezone name>". The zone name
+        // can be long ("Eastern Daylight Time" rather than "EDT" - a
+        // Windows/Python quirk), so the line shows the time and the zone
+        // goes in the opened block.
+        function whenParts(ts) {
+            var m = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*(.*)$/.exec(ts || '');
+            return m ? { stamp: m[1], zone: m[2] } : { stamp: ts || '', zone: '' };
+        }
+
+        // The detail is one recorded string - shown as recorded, never
+        // rewritten - but read as clauses so a 64-character hash is not
+        // sitting in the middle of a sentence and the verdicts are not the
+        // same colour as everything around them. Tolerant on purpose: it
+        // handles "label: value", the "hash file sha256 <hex>" form, and a
+        // clause that is just a sentence, so rows written before any of
+        // this still read sensibly.
+        var DETAIL_HASH_KEY = /^(.*(?:sha256|sha-256|hash|package))\s+([0-9a-fA-F]{16,})$/;
+        // "<something> at <where>" - the re-check's host and folder. Kept to
+        // a single unspaced value so an ordinary sentence ending in "at x y"
+        // is not chopped up.
+        var DETAIL_AT = /^(.*\sat)\s+(\S+)$/;
+        var DETAIL_HEX = /^[0-9a-fA-F]{32,}$/;
+        // "hash file <name> sha256 <hex>" / "archive <name> sha256 <hex>":
+        // the file's name is part of what was recorded, so it belongs beside
+        // the value it is the hash of, not inside the label.
+        var DETAIL_NAMED_HASH = /^(hash file|archive)\s+(\S+)\s+sha256\s+([0-9a-fA-F]{16,})$/i;
+        // What the entry recorded about the files themselves. An export
+        // records the package's own list ("package files: <hash> <name>,
+        // ..."); a re-check records what the server hashed ("server files:
+        // ..."). Entries written before 1.17.0 carry neither, and simply
+        // show no list rather than an empty one.
+        var DETAIL_FILES = /(?:^|; )(package files|server files): ([^;]+)/;
+        var DETAIL_NOT_LISTED = /\(\+(\d+) not listed\)\s*$/;
+        // A row already in a log cannot be corrected - that is the point of
+        // the chain - so the reader has to be safe on its own. Anything that
+        // states the same thing twice is not read as the first one: it is
+        // reported as unreadable, with the recorded string left whole below
+        // it. One entry that cannot be relied on is a far better outcome
+        // than one that quietly reads as a pass.
+        function countClauses(detail, key) {
+            return (String(detail || '').match(
+                new RegExp('(?:^|; )' + key + ': ', 'g')) || []).length;
+        }
+        function parseFileList(detail) {
+            var m = DETAIL_FILES.exec(detail || '');
+            if (!m) { return null; }
+            if (countClauses(detail, m[1]) > 1) { return { ambiguous: true, files: [] }; }
+            var over = DETAIL_NOT_LISTED.exec(m[2]);
+            var files = [];
+            m[2].replace(DETAIL_NOT_LISTED, '').split(', ').forEach(function (item) {
+                var f = /^([0-9a-fA-F]{64}) (.+)$/.exec(item.trim());
+                if (f) { files.push({ hash: f[1], name: f[2] }); }
+            });
+            return { kind: m[1], files: files, notListed: over ? parseInt(over[1], 10) : 0 };
+        }
+
+        // The two verdicts, read from whichever wording the row was written
+        // with: entries before 1.17.0 say "script match" and
+        // "cot_router-raw.csv match".
+        function recheckVerdicts(detail) {
+            var d = String(detail || '');
+            var twice = false;
+            function find(keys) {
+                for (var i = 0; i < keys.length; i++) {
+                    var m = new RegExp('(?:^|; )' + keys[i] + ': ([^;]+)').exec(d);
+                    if (m) {
+                        if (countClauses(d, keys[i]) > 1) { twice = true; }
+                        return m[1].trim();
+                    }
+                }
+                return null;
+            }
+            var v = {
+                script: find(['SQL query script match', 'script match']),
+                raw: find(['raw table rows match', 'cot_router-raw\\.csv match'])
+            };
+            v.ambiguous = twice;
+            return v;
+        }
+
+        // Three states, and only three. A file was compared by hash and the
+        // hashes were the same; it was compared and they differ; or it was
+        // recorded and not compared. Nothing is coloured green for a
+        // comparison that was never made - which is most of the list.
+        function compareState(name, verdicts) {
+            var verdict = null;
+            if (/-queries\.sql$/.test(name)) { verdict = verdicts.script; }
+            else if (/-recheck-cot_router-raw\.csv$/.test(name)) { verdict = verdicts.raw; }
+            if (verdict === null) { return { label: 'recorded, not compared', cls: 'muted' }; }
+            if (/^yes$/i.test(verdict)) { return { label: 'compared \u2014 same hash', cls: 'ok' }; }
+            return { label: 'compared \u2014 differs', cls: 'bad' };
+        }
+
+        // Why most of the list is the third state. The same statement is in
+        // the package README, which travels with the evidence; this is the
+        // short form, said where the verdicts are.
+        var WHY_NOT_COMPARED =
+            'Two files are compared by hash: the SQL query script, and the raw table rows ' +
+            'the map data was built from. The rest are recorded, not compared - this tool ' +
+            'and psql write CSV differently, and eight of the files are not limited by time, ' +
+            'so they change between an export and a re-check for ordinary reasons. Those ' +
+            'files stay on the server, where they can be compared row by row.';
+
+        function fileRowsHtml(files, verdicts) {
+            return files.map(function (f) {
+                var st = verdicts ? compareState(f.name, verdicts) : null;
+                return '<div class="fileRow">' +
+                    '<span class="fName">' + esc(f.name) + '</span>' +
+                    '<span class="fState' + (st ? ' ' + st.cls : '') + '">' +
+                        (st ? st.label : '') + '</span>' +
+                    '<div class="fHashLine"><span class="fHash">' + esc(f.hash) + '</span> ' +
+                    '<button type="button" class="copyBtn" data-copy="' + esc(f.hash) + '">Copy</button>' +
+                    '</div></div>';
+            }).join('');
+        }
+
+        // The block that goes in the opened entry: for a re-check, what was
+        // compared against what, above the full list; for an export, the
+        // list of what the package held. Returns null when the entry
+        // recorded no list.
+        var AMBIGUOUS_NOTE =
+            'This entry records the same statement more than once, so there is no single ' +
+            'reading of what it says. Nothing is shown as a result. What was recorded is ' +
+            'below, in full and unaltered.';
+        function filesBlock(r) {
+            var parsed = parseFileList(r.detail);
+            var verdicts = r.export_kind === 'recheck' ? recheckVerdicts(r.detail) : null;
+            if ((parsed && parsed.ambiguous) || (verdicts && verdicts.ambiguous)) {
+                return { label: 'What was compared', ambiguous: true,
+                         html: '<div class="fileNote bad">' + esc(AMBIGUOUS_NOTE) + '</div>' };
+            }
+            if (!parsed || !parsed.files.length) { return null; }
+            var server = parsed.kind === 'server files';
+            if (!server) { verdicts = null; }
+            var total = parsed.files.length + parsed.notListed;
+            var html = '';
+            if (server) {
+                var compared = 0;
+                var named = { script: null, raw: null };
+                parsed.files.forEach(function (f) {
+                    if (/-queries\.sql$/.test(f.name)) { named.script = f; }
+                    else if (/-recheck-cot_router-raw\.csv$/.test(f.name)) { named.raw = f; }
+                });
+                var grid = '';
+                [['the SQL query script', named.script, verdicts.script],
+                 ['the raw table rows', named.raw, verdicts.raw]].forEach(function (pair) {
+                    var what = pair[0], f = pair[1], verdict = pair[2];
+                    if (!f) {
+                        grid += '<span class="cWhat">' + what + '</span><span></span>' +
+                                '<span class="cState bad">' +
+                                esc(verdict || 'not in the list of hashes') + '</span>';
+                        return;
+                    }
+                    compared += 1;
+                    var st = compareState(f.name, verdicts);
+                    grid += '<span class="cWhat">' + what + '</span>' +
+                            '<span class="cFile">' + esc(f.name) + '</span>' +
+                            '<span class="cState ' + st.cls + '">' + st.label + '</span>';
+                });
+                var others = total - compared;
+                if (others > 0) {
+                    grid += '<span class="cWhat">' + others + ' other file(s)</span><span></span>' +
+                            '<span class="cState muted">recorded, not compared</span>';
+                }
+                html += '<div class="compared">' + grid + '</div>';
+            }
+            html += '<button type="button" class="filesToggle" aria-expanded="false">' +
+                    (server ? 'Show all ' + total + ' file(s) hashed on the server'
+                            : 'Show the ' + total + ' file(s) and their hashes') + '</button>' +
+                    '<div class="fileList" hidden>' + fileRowsHtml(parsed.files, verdicts) +
+                    (parsed.notListed ? '<div class="fileRow"><span class="fHashLine muted">' +
+                        parsed.notListed + ' further name(s) were not recorded here</span></div>' : '') +
+                    '</div>';
+            if (server) { html += '<div class="fileNote">' + esc(WHY_NOT_COMPARED) + '</div>'; }
+            return { label: server ? 'What was compared' : 'Files in the package', html: html };
+        }
+
+        function detailHtml(detail) {
+            var out = '';
+            String(detail).split('; ').forEach(function (clause) {
+                var k = null, v = null, m;
+                var colon = clause.indexOf(': ');
+                if (colon > 0) {
+                    k = clause.slice(0, colon);
+                    v = clause.slice(colon + 2);
+                } else if ((m = DETAIL_NAMED_HASH.exec(clause))) {
+                    // "hash file" is what the row says and what the
+                    // downloaded CSV carries; on screen it is read as what
+                    // it is, the list of hashes the server posted back.
+                    out += '<span class="dKey">' +
+                           esc(/^hash file$/i.test(m[1]) ? 'list of hashes' : m[1]) + '</span>' +
+                           '<span class="dVal"><span class="mono">' + esc(m[2]) + '</span><br>' +
+                           '<span class="mono">' + esc(m[3]) + '</span></span>';
+                    return;
+                } else if ((m = DETAIL_HASH_KEY.exec(clause)) || (m = DETAIL_AT.exec(clause))) {
+                    k = m[1]; v = m[2];
+                }
+                if (v === null) {
+                    out += '<span class="dSay">' + esc(clause) + '</span>';
+                    return;
+                }
+                // A verdict is what someone reads this entry for: yes in
+                // green, anything else in red. Only on the clauses that
+                // actually state one, never on free text that happens to
+                // contain the word.
+                var cls = 'dVal';
+                if (/match$/i.test(k)) {
+                    cls += (/^yes$/i.test(v)) ? ' ok' : ' bad';
+                } else if (DETAIL_HEX.test(v) || v.indexOf('/') !== -1) {
+                    cls += ' mono';
+                }
+                out += '<span class="dKey">' + esc(k) + '</span>' +
+                       '<span class="' + cls + '">' + esc(v) + '</span>';
+            });
+            return '<div class="detailGrid">' + out + '</div>';
+        }
+
+        function row(label, value, cls) {
+            if (value === null || value === undefined || value === '') { return ''; }
+            return '<dt>' + esc(label) + '</dt><dd' + (cls ? ' class="' + cls + '"' : '') + '>' + value + '</dd>';
+        }
+
+        // Everything the entry recorded, as labelled lines. Only fields
+        // this entry actually has: a re-check has no window or area, a
+        // user-added entry has neither those nor a hash, and an empty
+        // labelled line reads as missing information rather than as
+        // "not applicable to this kind of entry".
+        function entryBody(r, visible) {
+            var w = whenParts(r.ts_local);
+            var dl = '';
+            dl += row('What happened',
+                      esc(kindLabel(r.export_kind)) +
+                      (kindNote(r.export_kind) ? '<br><span class="muted">' + esc(kindNote(r.export_kind)) + '</span>' : '') +
+                      '<br><span class="muted">recorded as: ' + esc(r.export_kind) + '</span>');
+            // The UTC value only when it says something the local stamp does
+            // not - on a server whose own clock is UTC they are the same
+            // moment written twice.
+            var sameZone = /^utc$/i.test(w.zone || '');
+            dl += row('Recorded', esc(w.stamp) + (w.zone ? ' <span class="muted">' + esc(w.zone) + '</span>' : '') +
+                      ((r.ts_utc && !sameZone) ? ' <span class="muted">(' +
+                          esc(String(r.ts_utc).replace(/\.\d+/, '')) + ' UTC)</span>' : ''));
+            dl += row('Who ran it', '<span class="' + whoClass(r.actor) + '">' + esc(r.actor) + '</span>');
+            dl += row('For', r.requested_for ? esc(r.requested_for) : '<span class="muted">not recorded</span>');
+            if (r.window_start || r.window_end) {
+                dl += row('Window', esc(r.window_start) + ' &rarr; ' + esc(r.window_end) +
+                          (r.window_timezone ? ' <span class="muted">(' + esc(r.window_timezone) + ')</span>' : ''), 'mono');
+            }
+            if (r.north !== null && r.north !== undefined) {
+                dl += row('Area', 'N&nbsp;' + Number(r.north).toFixed(4) + '&nbsp;&nbsp; S&nbsp;' + Number(r.south).toFixed(4) +
+                          '&nbsp;&nbsp; W&nbsp;' + Number(r.west).toFixed(4) + '&nbsp;&nbsp; E&nbsp;' + Number(r.east).toFixed(4), 'mono');
+            }
+            // record_count counts files hashed on a re-check row (see
+            // /recheck/<token>/result), not records - so it says which.
+            dl += row(r.export_kind === 'recheck' ? 'Files hashed on the server' : 'Records',
+                      (r.record_count === null || r.record_count === undefined) ? '' : esc(r.record_count));
+            if (r.package_sha256) {
+                // Named where the entry recorded a name (newer rows carry a
+                // "file: <name>" clause); otherwise its role, which is always
+                // known from the kind.
+                var fileClause = /(?:^|; )file: ([^;]+)/.exec(r.detail || '');
+                var named = fileClause ? fileClause[1] : (r.of_file || '');
+                dl += row('SHA-256 of',
+                          (named ? '<span class="mono">' + esc(named) + '</span><br>' : '') +
+                          '<span class="hash">' + esc(r.package_sha256) + '</span> ' +
+                          '<button type="button" class="copyBtn" data-copy="' + esc(r.package_sha256) + '">Copy</button>' +
+                          '<br><span class="muted">' + esc(hashRole(r.export_kind)) + '</span>');
+            }
+            // What the entry recorded about the files themselves: for a
+            // re-check, which two were compared and what the rest are; for
+            // an export, everything the package held and its hash.
+            var files = filesBlock(r);
+            if (files) { dl += row(files.label, files.html); }
+            if (r.files_excluded) {
+                dl += row('Files excluded', '<span class="warn">' + esc(r.files_excluded) + '</span>');
+            } else if (r.export_kind === 'package') {
+                dl += row('Files excluded', '<span class="muted">none &mdash; every file was included</span>');
+            }
+            if (r.channels_excluded) {
+                dl += row('Channels excluded', '<span class="warn">' + esc(r.channels_excluded) + '</span>');
+            }
+            // Detail is written as '; '-separated clauses; one per line.
+            // The case as this entry recorded it, whenever a correction has
+            // since moved it: the log shows the mistake and the correction,
+            // never a tidied-up value that disagrees with the package
+            // somebody is holding.
+            var recorded = r.case_id || '';
+            var effective = (r.effective_case_id === undefined || r.effective_case_id === null)
+                ? recorded : r.effective_case_id;
+            if (recorded !== effective) {
+                dl += row('Case recorded as', '<span class="warn">' + esc(recorded || '(none)') + '</span>' +
+                          ' <span class="muted">&mdash; corrected to ' + esc(effective || '(none)') +
+                          '; see the case-correction entry</span>');
+            }
+            // The file name has its own row above; showing it again here
+            // would be the same fact twice.
+            var rest = String(r.detail || '').split('; ')
+                .filter(function (cl) {
+                    // Whatever the block above already states plainly is
+                    // not said again here: the count of files, the count of
+                    // comparisons and the two verdicts all appear as
+                    // labelled lines with the files named. On a row with no
+                    // such block - anything recorded before 1.17.0 - every
+                    // clause stays, because nothing else is showing it.
+                    // An entry that cannot be read as one result hides
+                    // nothing at all: the recorded string is what a reader
+                    // has left to work from.
+                    if (files && files.ambiguous) { return true; }
+                    if (files) {
+                        if (/^compared: /.test(cl)) { return false; }
+                        if (/file\(s\) hashed/.test(cl)) { return false; }
+                        if (/^(SQL query script|raw table rows|script|cot_router-raw\.csv) match: /.test(cl)) {
+                            return false;
+                        }
+                    }
+                    return !/^(file|package files|server files): /.test(cl);
+                }).join('; ');
+            if (rest) { dl += row('Detail', detailHtml(rest)); }
+            // An export can be re-checked at any time, not only on the page
+            // that produced it: the token shown there lasts 48 hours and is
+            // shown once. This asks for a new one.
+            if (r.export_kind === 'package' && r.package_sha256) {
+                dl += row('Re-check',
+                          '<button type="button" class="recheckBtn" data-hash="' +
+                          esc(r.package_sha256) + '">Re-check this extraction\u2026</button>' +
+                          '<div class="recheckHere"></div>');
+            }
+            dl += row('Correct the case', '<button type="button" class="correctBtn" ' +
+                      'data-scope="entry" data-id="' + r.id + '" data-current="' + esc(effective) +
+                      '">Correct this entry\u2019s case\u2026</button>');
+            dl += row('Tool version', r.tool_version ? esc(r.tool_version) : '');
+            return '<div class="entryBody"' + (visible ? '' : ' hidden') + '><dl>' + dl + '</dl></div>';
+        }
+
+        // withCase: the flat view shows which case each entry belongs to;
+        // inside an opened case that column would repeat the heading.
+        function entryHtml(r, withCase) {
+            var w = whenParts(r.ts_local);
+            return '<div class="entry">' +
+                '<div class="entryLine">' +
+                '<input type="checkbox" class="rowChk" value="' + r.id + '" ' +
+                       'aria-label="Select this entry for download">' +
+                '<button type="button" class="entryToggle" aria-expanded="false">' +
+                    '<span class="caret">&#9656;</span>' +
+                    '<span class="mono">' + esc(w.stamp) + '</span>' +
+                    '<span class="' + whoClass(r.actor) + '">' + esc(r.actor) + '</span>' +
+                    (withCase ? '<span>' + (r.case_id ? esc(r.case_id) : '<span class="muted">(no case)</span>') + '</span>' : '') +
+                    '<span class="eWhat">' + esc(kindLabel(r.export_kind)) + '</span>' +
+                    '<span class="' + outcomeClass(r.outcome) + '">' + esc(r.outcome) + '</span>' +
+                '</button></div>' +
+                entryBody(r) +
+                '</div>';
+        }
+
+        // A case is a story: an extraction, then what was done to check it,
+        // then perhaps another extraction for a different area. The log
+        // records that shape already - every re-check row carries the
+        // PACKAGE's hash in package_sha256, and a companion row carries it
+        // in its text - so the tree is read out of the entries rather than
+        // recorded separately.
+        var COMPANION_PACKAGE = /for package ([0-9a-fA-F]{64})/;
+        function buildCaseTree(entries) {
+            var oldestFirst = (entries || []).slice().reverse();
+            var extractions = [], byHash = {}, other = [];
+            oldestFirst.forEach(function (r) {
+                if (r.export_kind === 'package' || r.export_kind === 'locations') {
+                    var x = { entry: r, n: extractions.length + 1, children: [] };
+                    extractions.push(x);
+                    // First one wins: two exports cannot share a hash in
+                    // practice (the package's README carries its export time).
+                    if (r.package_sha256 && !byHash[r.package_sha256]) { byHash[r.package_sha256] = x; }
+                }
+            });
+            oldestFirst.forEach(function (r) {
+                if (r.export_kind === 'package' || r.export_kind === 'locations') { return; }
+                var link = null;
+                if (r.export_kind === 'recheck' || r.export_kind === 'recheck-fetch') {
+                    link = r.package_sha256;
+                } else if (r.export_kind === 'companion') {
+                    var m = COMPANION_PACKAGE.exec(r.detail || '');
+                    link = m ? m[1] : null;
+                }
+                if (link && byHash[link]) {
+                    // The hash on this row is the PACKAGE's. The export that
+                    // produced it recorded its file name, so the child can
+                    // show it instead of asking the reader to know it. Rows
+                    // recorded before exports named their file, and rows in
+                    // the flat view, keep the role text alone.
+                    var parent = byHash[link].entry;
+                    var pm = /(?:^|; )file: ([^;]+)/.exec(parent.detail || '');
+                    if (pm) { r.of_file = pm[1]; }
+                    byHash[link].children.push(r);
+                }
+                else { other.push(r); }   // a preview, a log download, a correction
+            });
+            return { extractions: extractions, other: other };
+        }
+
+        // One extraction and everything done to it. The line carries the
+        // number, so the entry inside does not repeat it.
+        function extractionHtml(x) {
+            var r = x.entry, w = whenParts(r.ts_local);
+            return '<div class="extraction">' +
+                '<div class="entryLine">' +
+                '<input type="checkbox" class="extractionChk" ' +
+                       'aria-label="Select this extraction and everything under it">' +
+                '<button type="button" class="extractionToggle" aria-expanded="false">' +
+                    '<span class="caret">&#9656;</span>' +
+                    '<span class="xName">Extraction ' + esc(x.n) + '</span>' +
+                    '<span>' + esc(kindLabel(r.export_kind)) + '</span>' +
+                    '<span class="mono">' + esc(w.stamp) + '</span>' +
+                    ((r.record_count === null || r.record_count === undefined) ? '' :
+                        '<span class="muted">' + esc(r.record_count) + ' records</span>') +
+                    '<span class="' + outcomeClass(r.outcome) + '">' + esc(r.outcome) + '</span>' +
+                    (x.children.length ? '<span class="muted">' + esc(x.children.length) +
+                        (x.children.length === 1 ? ' event' : ' events') + '</span>' : '') +
+                '</button>' +
+                '<input type="checkbox" class="rowChk" value="' + r.id + '" hidden ' +
+                       'aria-label="Select this extraction for download">' +
+                '</div>' +
+                '<div class="extractionBody" hidden>' + entryBody(r, true) + '</div>' +
+                '<div class="extractionChildren">' +
+                    x.children.map(function (child) { return entryHtml(child, false); }).join('') +
+                '</div></div>';
+        }
+
+        // Adding a user, changing the connection, restoring a backup: real
+        // entries, but not a case. Their own section, present on every page
+        // rather than sorted in among the cases as a case with no name.
+        function appWideHtml(aw) {
+            if (!aw || !aw.entry_count) { return ''; }
+            var w = whenParts(aw.last_ts_local);
+            return '<div class="appWide">' +
+                '<div class="appWideHead">Application-wide activity' +
+                    '<span class="muted"> &middot; ' + esc(aw.entry_count) +
+                    (aw.entry_count === 1 ? ' event' : ' events') +
+                    (w.stamp ? ' &middot; last ' + esc(w.stamp) : '') + '</span></div>' +
+                (aw.entries || []).map(function (r) { return entryHtml(r, false); }).join('') +
+                (aw.entry_count > (aw.entries || []).length
+                    ? '<div class="muted" style="padding: var(--space-2)">Showing the newest ' +
+                      esc((aw.entries || []).length) + '. The rest are in the flat list and the download.</div>'
+                    : '') +
+                '</div>';
+        }
+
+        function caseHeadline(c) {
+            var rechecks = (c.entries || []).filter(function (r) { return r.export_kind === 'recheck'; });
+            if (rechecks.length) {
+                // Newest first from the server; a failure anywhere in the
+                // case outranks a later pass, since it is the thing to look at.
+                var bad = rechecks.filter(function (r) { return r.outcome !== 'raw match'; })[0];
+                return bad ? bad.outcome : rechecks[0].outcome;
+            }
+            return c.last_outcome;
+        }
+
+        function nExtractions(c) {
+            return (c.entries || []).filter(function (r) {
+                return r.export_kind === 'package' || r.export_kind === 'locations';
+            }).length;
+        }
+
+        function caseHtml(c) {
+            var w = whenParts(c.last_ts_local);
+            var name = c.case_id ? esc(c.case_id)
+                : '<span class="muted">(no case &mdash; administration)</span>';
+            return '<div class="caseGroup">' +
+                '<div class="caseLine">' +
+                '<input type="checkbox" class="caseChk" aria-label="Select every entry in this case">' +
+                '<button type="button" class="caseToggle" aria-expanded="false">' +
+                    '<span class="caret">&#9656;</span>' +
+                    '<span class="caseName">' + name + '</span>' +
+                    '<span class="muted">' + esc(nExtractions(c)) +
+                        (nExtractions(c) === 1 ? ' extraction' : ' extractions') +
+                        ' &middot; ' + esc(c.entry_count) + (c.entry_count === 1 ? ' event' : ' events') +
+                        ' &middot; last ' + esc(w.stamp) + '</span>' +
+                    '<span class="' + outcomeClass(caseHeadline(c)) + '">' + esc(caseHeadline(c)) + '</span>' +
+                '</button>' +
+                (c.case_id ? '<button type="button" class="correctBtn" data-scope="case" ' +
+                    'data-current="' + esc(c.case_id) + '">Correct case\u2026</button>' : '') +
+                '</div>' +
+                '<div class="caseBody" hidden>' + caseTreeHtml(c) + '</div></div>';
+        }
+
+        function caseTreeHtml(c) {
+            var tree = buildCaseTree(c.entries);
+            var html = tree.extractions.map(extractionHtml).join('');
+            if (tree.other.length) {
+                html += '<div class="otherGroup">' +
+                    '<div class="entryLine">' +
+                    '<input type="checkbox" class="otherChk" aria-label="Select the other activity for this case">' +
+                    '<button type="button" class="otherToggle" aria-expanded="false">' +
+                        '<span class="caret">&#9656;</span>' +
+                        '<span>Other activity for this case</span>' +
+                        '<span class="muted">(' + esc(tree.other.length) + ')</span>' +
+                    '</button></div>' +
+                    '<div class="otherBody" hidden>' +
+                        tree.other.map(function (r) { return entryHtml(r, false); }).join('') +
+                    '</div></div>';
+            }
+            // A case whose entries are all unattached still shows them.
+            return html || '<div class="muted" style="padding: var(--space-2)">No entries.</div>';
+        }
+
+        function updatePageNav() {
+            document.getElementById('prevPageBtn').disabled = currentPage <= 1;
+            document.getElementById('nextPageBtn').disabled = currentPage >= totalPages;
+            document.getElementById('pageLabel').textContent =
+                'Page ' + currentPage + ' of ' + totalPages;
+        }
+
+        function loadAudit(page) {
+            currentPage = page || currentPage;
+            var status = document.getElementById('status');
+            var url = '/api/audit?page=' + currentPage;
+            if (view === 'case') { url += '&group=case'; }
+            if (currentFilter) { url += '&q=' + encodeURIComponent(currentFilter); }
+            // Sorting is a flat-view thing: cases are ordered by their most
+            // recent entry, the only order a list of cases reads in.
+            if (view !== 'case' && currentSort) {
+                url += '&sort=' + encodeURIComponent(currentSort) + '&dir=' + currentSortDir;
+            }
+            return fetch(url)
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.error) {
+                        status.textContent = 'Error: ' + data.error;
+                        return;
+                    }
+                    totalPages = data.pages;
+                    if (!data.total) {
+                        document.getElementById('rows').innerHTML = '';
+                        document.getElementById('listHead').hidden = true;
+                        document.getElementById('pageLabel').textContent = '';
+                        status.textContent = currentFilter
+                            ? 'No rows match "' + currentFilter + '".'
+                            : 'No exports recorded yet.';
+                        return;
+                    }
+
+                    document.getElementById('rows').innerHTML = (view === 'case')
+                        ? (data.cases || []).map(caseHtml).join('') + appWideHtml(data.app_wide)
+                        : (data.rows || []).map(function (r) { return entryHtml(r, true); }).join('');
+                    document.getElementById('listHead').hidden = false;
+                    document.getElementById('sortCells').hidden = (view === 'case');
+                    document.getElementById('selectAllRows').checked = false;
+                    updateSelectionCount();
+                    updatePageNav();
+                    status.textContent = (view === 'case')
+                        ? ('Showing ' + (data.cases || []).length + ' of ' + data.total_cases +
+                           ' case(s), ' + data.total + ' entries in all.')
+                        : ('Showing ' + (data.rows || []).length + ' of ' + data.total + ' export requests.');
+                })
+                .catch(function (err) {
+                    status.textContent = 'Failed to load: ' + err;
+                });
+        }
+
+        document.getElementById('prevPageBtn').addEventListener('click', function () {
+            if (currentPage > 1) { loadAudit(currentPage - 1); }
+        });
+        document.getElementById('nextPageBtn').addEventListener('click', function () {
+            if (currentPage < totalPages) { loadAudit(currentPage + 1); }
+        });
+
+        // Shared by both download buttons - `body` already has case_id/actor/
+        // ids (or omits ids entirely for "everything"). Reloads to page 1
+        // afterward, since that's where the row this download just wrote
+        // lands (newest first) - the whole point of logging it is to see it.
+        function runDownload(btn, body) {
+            var originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Downloading...';
+
+            return fetch('/api/audit/download', {
+                method: 'POST',
+                headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify(body)
+            })
+            .then(function (r) {
+                if (!r.ok) {
+                    return r.json().then(
+                        function (j) { throw new Error(j.error || ('HTTP ' + r.status)); },
+                        function () { throw new Error('HTTP ' + r.status); }
+                    );
+                }
+                var name = 'audit-log.csv';
+                var cd = r.headers.get('Content-Disposition');
+                if (cd) {
+                    var m = cd.match(/filename="([^"]+)"/);
+                    if (m) { name = m[1]; }
+                }
+                return r.blob().then(function (b) { return { blob: b, name: name }; });
+            })
+            .then(function (f) {
+                var url = URL.createObjectURL(f.blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = f.name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                return loadAudit(1);
+            })
+            .catch(function (err) {
+                alert('Download failed: ' + err.message);
+            })
+            .then(function () {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            });
+        }
+
+        // Both required, same as the Export page: the hint names the missing
+        // one and the cursor goes to it. Values stay put between downloads.
+        function requiredFields() {
+            var caseField = document.getElementById('caseId');
+            var forField = document.getElementById('exportedFor');
+            var hint = document.getElementById('downloadHint');
+            var caseId = caseField.value.trim();
+            var forWhom = forField.value.trim();
+            caseField.classList.toggle('missing', !caseId);
+            forField.classList.toggle('missing', !forWhom);
+            if (!caseId || !forWhom) {
+                hint.textContent = !caseId
+                    ? 'Enter the Case / Incident this download is for.'
+                    : 'Enter who this download is for (Exported For).';
+                (!caseId ? caseField : forField).focus();
+                return null;
+            }
+            hint.textContent = '';
+            return { caseId: caseId, forWhom: forWhom };
+        }
+
+        document.getElementById('downloadBtn').addEventListener('click', function () {
+            var ids = Array.prototype.map.call(
+                document.querySelectorAll('.rowChk:checked'),
+                function (c) { return parseInt(c.value, 10); }
+            );
+            if (!ids.length) {
+                alert('Select at least one row to download - check the boxes ' +
+                      'on the left, or the header checkbox to select everything ' +
+                      'on this page.');
+                return;
+            }
+
+            var who = requiredFields();
+            if (!who) { return; }
+            runDownload(this, { case_id: who.caseId, requested_for: who.forWhom, ids: ids });
+        });
+
+        document.getElementById('downloadAllBtn').addEventListener('click', function () {
+            var who = requiredFields();
+            if (!who) { return; }
+            // No `ids` here on purpose - the backend treats that as "every
+            // row," which is what this button is for.
+            runDownload(this, { case_id: who.caseId, requested_for: who.forWhom });
+        });
+
+        // Server-side, across the whole log, not just the current page -
+        // see AUDIT_SORT_COLUMNS / the `q` param in app.py's /api/audit.
+        // Debounced the same way the main page's time-window fields are
+        // (500ms), so it doesn't fire a request on every keystroke.
+        var filterTimer = null;
+        document.getElementById('filterInput').addEventListener('input', function () {
+            var value = this.value;
+            if (filterTimer) { clearTimeout(filterTimer); }
+            filterTimer = setTimeout(function () {
+                currentFilter = value.trim();
+                document.getElementById('filterHint').textContent =
+                    currentFilter ? 'Searching the whole log, not just this page.' : '';
+                loadAudit(1);
+            }, 500);
+        });
+
+        function updateSortHeaders() {
+            document.querySelectorAll('.sortCell').forEach(function (cell) {
+                var key = cell.getAttribute('data-sort');
+                var active = key === currentSort;
+                cell.classList.toggle('activeSort', active);
+                cell.querySelector('.arrow').innerHTML = active
+                    ? (currentSortDir === 'asc' ? '&#9652;' : '&#9662;')
+                    : '&#9662;';
+            });
+        }
+
+        document.querySelectorAll('.sortCell').forEach(function (cell) {
+            cell.addEventListener('click', function () {
+                var key = cell.getAttribute('data-sort');
+                if (currentSort === key) {
+                    currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc';
+                } else {
+                    currentSort = key;
+                    currentSortDir = 'asc';
+                }
+                updateSortHeaders();
+                loadAudit(1);
+            });
+        });
+
+        // The two views. By case is the default: a case is the unit someone
+        // works in (its package, the fetch of its script, its re-check).
+        // Flat list is the chronological view across every case, for "what
+        // happened today" rather than "what happened to this case".
+        function setView(next) {
+            if (view === next) { return; }
+            view = next;
+            document.getElementById('byCaseBtn').setAttribute('aria-pressed', String(view === 'case'));
+            document.getElementById('flatBtn').setAttribute('aria-pressed', String(view === 'flat'));
+            loadAudit(1);
+        }
+        document.getElementById('byCaseBtn').addEventListener('click', function () { setView('case'); });
+        document.getElementById('flatBtn').addEventListener('click', function () { setView('flat'); });
+
+        loadAudit(1);
+    </script>
+</body>
+</html>

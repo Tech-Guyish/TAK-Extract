@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<!-- data-theme reflects THIS logged-in account's own preference (set
+     from the Appearance panel below), rendered server-side on every page
+     - see index.html for the full rationale, and app.py's get_theme(). -->
+<html{% if theme == 'dark' %} data-theme="dark"{% elif theme == 'light' %} data-theme="light"{% endif %}>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>TAK-Extract — System</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+
+        :root {
+            color-scheme: light dark;
+            --bg: #ffffff;
+            --text: #1a1a1a;
+            --text-muted: #666666;
+            --panel-bg: #f9f9f9;
+            --panel-border: #dddddd;
+            --box-bg: #ffffff;
+            --box-border: #cccccc;
+            --btn-bg: #dcdcdc;
+            --btn-border: #a8a8a8;
+            --table-header-bg: #f0f0f0;
+            --table-row-alt-bg: #fafafa;
+            --accent: #2a6fdb;
+            --accent-text: #ffffff;
+            --ok: #009900;
+            --bad: #cc0000;
+            --bad-bg: #fbeaea;
+            --warn: #9a6b00;
+
+            --space-1: 4px;
+            --space-2: 8px;
+            --space-3: 12px;
+            --space-4: 16px;
+            --space-5: 20px;
+            --space-6: 24px;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #1a1a1a; --text: #e8e8e8; --text-muted: #aaaaaa;
+                --panel-bg: #262626; --panel-border: #444444;
+                --box-bg: #202020; --box-border: #555555;
+                --btn-bg: #454545; --btn-border: #808080;
+                --table-header-bg: #262626; --table-row-alt-bg: #212121;
+                --accent: #4a8eea; --accent-text: #ffffff;
+                --ok: #4caf50; --bad: #ff6b6b; --bad-bg: #3a2323;
+                --warn: #e0b34d;
+            }
+        }
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --bg: #1a1a1a; --text: #e8e8e8; --text-muted: #aaaaaa;
+            --panel-bg: #262626; --panel-border: #444444;
+            --box-bg: #202020; --box-border: #555555;
+            --btn-bg: #454545; --btn-border: #808080;
+            --table-header-bg: #262626; --table-row-alt-bg: #212121;
+            --accent: #4a8eea; --accent-text: #ffffff;
+            --ok: #4caf50; --bad: #ff6b6b; --bad-bg: #3a2323;
+        }
+        :root[data-theme="light"] {
+            color-scheme: light;
+            --bg: #ffffff; --text: #1a1a1a; --text-muted: #666666;
+            --panel-bg: #f9f9f9; --panel-border: #dddddd;
+            --box-bg: #ffffff; --box-border: #cccccc;
+            --btn-bg: #dcdcdc; --btn-border: #a8a8a8;
+            --table-header-bg: #f0f0f0; --table-row-alt-bg: #fafafa;
+            --accent: #2a6fdb; --accent-text: #ffffff;
+            --ok: #009900; --bad: #cc0000; --bad-bg: #fbeaea;
+        }
+
+        /* One bar across the window on every page. The nav is right-aligned
+           inside it, so it has to be the same box everywhere or the buttons
+           move from page to page - which they did, by 87px, because this
+           used to inherit each page's own content width. The content below
+           is centred by .pageBody rather than by <body>, so this can span
+           the full width without a 100vw trick (100vw is wider than the
+           viewport whenever there is a scrollbar). */
+        .pageHeader { display: flex; justify-content: space-between; align-items: center;
+                      flex-wrap: wrap; row-gap: var(--space-2); gap: var(--space-4);
+                      padding: var(--space-5) var(--space-4) var(--space-3); }
+        .pageBody { max-width: 1200px; margin: 0 auto;
+                    padding: 0 var(--space-4) var(--space-5); }
+        .pageHeader h1 { margin: 0; }
+        .versionTag { display: block; font-size: 11px; font-weight: normal; color: var(--text-muted);
+                      letter-spacing: 0.02em; margin-top: 2px; }
+        .headerActions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+
+        .siteNav { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+        .siteNav a, .siteNav .current {
+            display: inline-flex; align-items: center; justify-content: center;
+            height: 32px; box-sizing: border-box; padding: 0 var(--space-3);
+            font-size: 13px; border-radius: 3px; text-decoration: none;
+            border: 1px solid var(--btn-border);
+        }
+        .siteNav a { background: var(--btn-bg); color: var(--text); cursor: pointer; }
+        .siteNav a:hover { background: var(--panel-bg); }
+        .siteNav .current {
+            background: var(--accent); color: var(--accent-text); border-color: var(--accent);
+            cursor: default;
+        }
+        .whoami { font-size: 13px; color: var(--text-muted); }
+        .logoutForm { display: inline; margin: 0; }
+        /* margin: 0 matters - some pages' generic `button` rule carries a
+           margin-right, which widened this form and moved the nav with it. */
+        .logoutLink { font-size: 13px; color: var(--text); text-decoration: underline; cursor: pointer;
+                      background: none; border: 0; padding: 0; margin: 0; font-family: inherit; }
+
+        body { font-family: sans-serif; line-height: 1.5; margin: 0; background: var(--bg); color: var(--text); }
+        .muted { color: var(--text-muted); }
+        .panel { margin-top: var(--space-4); padding: var(--space-4); border: 1px solid var(--panel-border);
+                 background: var(--panel-bg); }
+        .panel h2 { margin-top: 0; font-size: 16px; }
+        table  { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: var(--space-3); }
+        /* Five columns of real content can't fit a phone screen; the table
+           scrolls sideways inside its own box rather than widening the page
+           (same approach as the Audit page's log table). */
+        .tableScroll { overflow-x: auto; }
+        th, td { border: 1px solid var(--panel-border); padding: var(--space-2); text-align: left;
+                 vertical-align: middle; }
+        th     { background: var(--table-header-bg); }
+        tr:nth-child(even) { background: var(--table-row-alt-bg); }
+        button { padding: var(--space-2) var(--space-3); font-size: 13px; background: var(--btn-bg);
+                 color: var(--text); border: 1px solid var(--btn-border); border-radius: 3px; cursor: pointer; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        /* Press feedback for a plain action button - lit up for exactly
+           as long as the mouse/touch is held, same as a native :active
+           state but in this app's accent color. No toggle-style buttons
+           on this page, but the selector stays for consistency with
+           pages that have them. !important: .dangerBtn already sets its
+           own color/border-color, which this needs to win over to
+           actually show on that button. */
+        button:not([aria-pressed]):active { background: var(--accent) !important; color: var(--accent-text) !important;
+                                             border-color: var(--accent) !important; }
+        .rowActions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+        .dangerBtn { border-color: var(--bad); color: var(--bad); }
+        select, input[type="text"], input[type="password"] {
+            padding: var(--space-2); font-size: 13px; background: var(--box-bg); color: var(--text);
+            border: 1px solid var(--box-border); border-radius: 3px;
+        }
+        /* align-items: flex-start, not center: .passwordGroup below is
+           taller than a plain input (it stacks 3 buttons under its own
+           input), and centering a taller flex item against shorter ones
+           in the same row pushes its OWN input out of line with
+           everything else's - flex-start keeps every item's top edge
+           (so every actual input box) on the same plane regardless of
+           what extra content trails below one of them. Safe for this
+           class's other two uses (Restore, Appearance) too - their rows
+           are all uniform height, where flex-start and center look
+           identical. */
+        .addUserForm { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: flex-start;
+                        margin-top: var(--space-3); }
+        .addUserForm input { flex: 1 1 140px; }
+        /* Same column-group shape as .passwordGroup below (input, then
+           its own actions directly under it) - Add user now lives here
+           instead of a separate row, at the same var(--space-1) distance
+           from its own field that Generate/Copy/Show keep from theirs. */
+        .usernameGroup { display: flex; flex-direction: column; gap: var(--space-1); flex: 1 1 140px; }
+        /* Same descendant-selector fix .passwordGroup input already
+           needed (see its own comment below) - .addUserForm input's
+           flex: 1 1 140px would otherwise apply to this column's
+           vertical axis instead of horizontal. */
+        .usernameGroup input { flex: none; width: 100%; }
+        .usernameActions { display: flex; align-items: center; gap: var(--space-2); }
+        .usernameActions button { margin-top: 0; }
+        /* Deliberately more space than the form's own var(--space-2) gap
+           between every other field - role and password read as two
+           different KINDS of thing (who they are vs. how they log in),
+           not just two fields in a row, so this one gap is wider on
+           purpose. */
+        .passwordGroup { display: flex; flex-direction: column; gap: var(--space-1);
+                          margin-left: var(--space-6); flex: 1 1 140px; }
+        /* .addUserForm input's own flex: 1 1 140px (above) is a
+           descendant selector - it still reaches this input even nested
+           inside .passwordGroup, and since THIS container is a COLUMN
+           flex (not row, like .addUserForm itself), that same 140px
+           flex-basis applies along the vertical axis instead of the
+           horizontal one - stretching the box to ~140px TALL instead of
+           wide, which is exactly what made it look four times the
+           height of every other field. Reset to a plain fixed-height
+           box, sized only by width: 100% below. */
+        .passwordGroup input { flex: none; width: 100%; }
+        /* flex: 1 1 0 - not each button's own natural (different) label
+           width - so Generate/Copy/Show split the row evenly and read as
+           one consistent set instead of three differently-sized buttons.
+           No padding/font-size override (there used to be one, shrinking
+           these below the page's normal button size) - plain default
+           button sizing here matches Add user's own height exactly,
+           since that button has no special sizing of its own either. */
+        .passwordActions { display: flex; gap: var(--space-1); }
+        .smallBtn { flex: 1 1 0; margin-top: 0; text-align: center; }
+        .settingsGrid { display: grid; grid-template-columns: 120px 1fr; gap: var(--space-2) var(--space-3);
+                        align-items: center; max-width: 480px; margin-top: var(--space-3); }
+        .settingsGrid label { font-size: 13px; }
+        .settingsActions { margin-top: var(--space-4); display: flex; gap: var(--space-2); align-items: center; }
+        .panelHead { display: flex; align-items: center; gap: var(--space-2);
+                     flex-wrap: wrap; }
+        .panelHead h2 { margin: 0; }
+        /* A section's About sits at the right edge of its heading line, clear
+           of the title (the Export page does the same). */
+        .sectionAbout { float: right; margin: 0; }
+        .panelHead .sectionAbout { float: none; margin-left: auto; }
+        .connStatus { display: inline-flex; align-items: center; gap: 6px;
+                      font-size: 13px; padding: 2px 10px; border-radius: 999px;
+                      background: transparent; border: 1px solid currentColor;
+                      cursor: pointer; }
+        .connStatus::before { content: ''; width: 8px; height: 8px; flex: none;
+                              border-radius: 50%; background: currentColor; }
+        .connStatus.ok { color: var(--ok); }
+        .connStatus.bad { color: var(--bad); }
+        .connStatus.warn { color: var(--warn); }
+        .connStatus.checking { color: var(--text-muted); }
+        .resultMsg { font-size: 13px; margin-left: var(--space-2); }
+        .resultMsg.ok { color: var(--ok); }
+        .resultMsg.bad { color: var(--bad); }
+        .hint { font-size: 12px; margin-top: var(--space-2); }
+        .infoBtn { padding: 2px var(--space-2); font-size: 12px; background: var(--btn-bg);
+                   border: 1px solid var(--btn-border); border-radius: 3px; cursor: pointer;
+                   margin: 0 0 0 var(--space-2); vertical-align: middle; }
+        .infoBox { margin: var(--space-2) 0; padding: var(--space-2) var(--space-3); background: var(--box-bg);
+                   border: 1px solid var(--box-border); font-size: 13px; }
+        .infoBox p { margin: 0 0 var(--space-2) 0; }
+        .infoBox p:last-child { margin-bottom: 0; }
+        .cmd { display: block; font-family: monospace; font-size: 12px; padding: var(--space-2);
+               margin: var(--space-2) 0; background: var(--box-bg); border: 1px solid var(--box-border);
+               overflow-x: auto; white-space: pre; }
+        /* Only this one short, single-line hint - the other two .hint
+           uses on this page are longer explanatory paragraphs (with
+           their own <strong>/<code> formatting) that read better kept
+           left-aligned. */
+        .hintCenter { text-align: center; }
+        .updateResult { margin-top: var(--space-3); padding: var(--space-3);
+                         border: 1px solid var(--box-border); background: var(--box-bg);
+                         font-size: 13px; }
+        .updateResult.ok { color: var(--ok); }
+        .updateResult pre { margin: var(--space-2) 0; padding: var(--space-2);
+                             background: var(--panel-bg); border: 1px solid var(--panel-border);
+                             font-family: monospace; font-size: 12px; white-space: pre-wrap; }
+        .copyBtn { padding: 2px var(--space-2); font-size: 12px; margin-top: 0; }
+    </style>
+</head>
+<body>
+    <div class="pageHeader">
+        <h1>TAK-Extract — System<span class="versionTag">{{ app_version.replace('TAK-Extract ', '') }}</span></h1>
+        <div class="headerActions">
+            <nav class="siteNav">
+                <a href="/">Export</a><a href="/verify">Verify &amp; Replay</a>
+                <a href="/audit">Audit Log</a><span class="current">System</span>
+                <a href="/guide" target="_blank" rel="noopener">Guide</a>
+            </nav>
+            {% if auth_mode == 'local' %}<span class="whoami">{{ username }}</span>
+            <form method="post" action="/logout" class="logoutForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="logoutLink">Log out</button></form>{% endif %}
+        </div>
+    </div>
+    <div class="pageBody">
+
+    <p class="muted">
+        Auth mode: <strong>{{ auth_mode }}</strong>{% if auth_mode == 'authentik' %} —
+        identity comes from the reverse proxy; passwords aren't used here.{% endif %}
+    </p>
+
+    <div class="panel">
+        <h2>Users</h2>
+        <p class="muted"><strong>admin</strong> gets every page; <strong>viewer</strong> gets Verify &amp;
+            Replay only. Nobody else can sign in.</p>
+        <div class="tableScroll">
+        <table>
+            <thead>
+                <tr>
+                    <th>Username</th><th>Role</th>
+                    {% if auth_mode == 'local' %}<th>Password</th>{% endif %}
+                    <th>Added</th><th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="usersBody"><tr><td colspan="5" class="muted">Loading...</td></tr></tbody>
+        </table>
+        </div>
+
+        <div class="addUserForm">
+            <div class="usernameGroup">
+                <input type="text" id="newUsername" placeholder="Username">
+                <div class="usernameActions">
+                    <button type="button" id="addUserBtn">Add user</button>
+                    <span class="resultMsg" id="addUserMsg"></span>
+                </div>
+            </div>
+            <select id="newRole">
+                <option value="admin">admin</option>
+                <option value="viewer" selected>viewer</option>
+            </select>
+            {% if auth_mode == 'local' %}
+                <div class="passwordGroup">
+                    <input type="password" id="newPassword" placeholder="Password">
+                    <div class="passwordActions">
+                        <button type="button" id="genPasswordBtn" class="smallBtn">Generate</button>
+                        <button type="button" id="copyPasswordBtn" class="smallBtn">Copy</button>
+                        <button type="button" id="togglePasswordBtn" class="smallBtn">Show</button>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+        <p class="hint muted hintCenter">Adding an existing username updates their role{% if auth_mode == 'local' %}
+            (and password, if one is entered){% endif %} instead of creating a duplicate.</p>
+    </div>
+
+    <div class="panel">
+        <div class="panelHead">
+            <h2>TAK Server connection</h2>
+            <button type="button" id="connStatus" class="connStatus checking"
+                    role="status" aria-live="polite">Checking...</button>
+            <button type="button" class="infoBtn sectionAbout" data-target="connAbout">ⓘ About</button>
+        </div>
+        <p class="muted">The TAK Server database this tool reads from; a saved change takes effect
+            on the next request.</p>
+        <div class="infoBox" id="connAbout" hidden>
+            <p><strong>Host</strong> depends on how this app is running, not just where Postgres is.
+                <strong>Bare metal</strong>, same machine as TAK Server: <code>127.0.0.1</code> (or
+                <code>localhost</code>). <strong>Docker</strong>, same machine as TAK Server:
+                <code>127.0.0.1</code> is <em>not</em> correct — that's the container's own loopback.
+                Run <code>./connect-database.sh</code> from the repo instead; it finds the real address
+                and configures what's needed to reach it (firewall, Postgres's
+                <code>listen_addresses</code> / <code>pg_hba.conf</code>), asking before anything
+                disruptive. <strong>Separate server</strong> (a split/HA install): enter that server's
+                address, and make sure its Postgres accepts connections from this machine and no
+                firewall blocks the port.</p>
+            <p><strong>Port</strong> and <strong>Database</strong> default to TAK Server's own values
+                (5432, <code>cot</code>) if left blank. <strong>User</strong>: a dedicated, least-privilege
+                read-only account for this tool, not TAK Server's own database user — there is no
+                default on purpose.</p>
+        </div>
+        <div class="settingsGrid">
+            <label for="dbHost">Host</label><input type="text" id="dbHost" placeholder="127.0.0.1">
+            <label for="dbPort">Port</label><input type="text" id="dbPort" placeholder="5432">
+            <label for="dbName">Database</label><input type="text" id="dbName" placeholder="cot">
+            <label for="dbUser">User</label><input type="text" id="dbUser">
+            <label for="dbPassword">Password</label>
+            <input type="password" id="dbPassword" placeholder="Leave blank to keep the current password">
+        </div>
+        <div class="settingsActions">
+            <button type="button" id="testConnBtn">Test connection</button>
+            <button type="button" id="saveSettingsBtn">Save</button>
+            <span class="resultMsg" id="settingsMsg"></span>
+        </div>
+    </div>
+
+    <div class="panel">
+        <button type="button" class="infoBtn sectionAbout" data-target="backupAbout">ⓘ About</button>
+        <h2>Backup &amp; restore</h2>
+        <p class="muted">One file: the audit log, every user account, and the connection settings
+            (not the password).</p>
+        <div class="infoBox" id="backupAbout" hidden>
+            <p>Everything needed to move this installation to another machine. <strong>The TAK
+                Server password is deliberately left out</strong> — live credential material does not
+                belong in a downloaded file. The new machine supplies its own, the same way this one
+                did (its <code>.env</code>, or entered once above).</p>
+            <p><strong>Restore replaces everything on this machine</strong> — every user, every audit
+                log entry, every connection setting — with the uploaded file's contents. A safety copy
+                of what is here now is kept only until the restore succeeds, in case the upload is bad.</p>
+        </div>
+        <a href="/api/admin/backup"><button type="button">Download backup</button></a>
+
+        <h2 style="margin-top: var(--space-5);">Restore from a backup</h2>
+        <p class="muted"><strong>Replaces</strong> every user, audit entry and connection setting here
+            with the file's contents.</p>
+        <div class="addUserForm">
+            <input type="file" id="restoreFile" accept=".sqlite,.db">
+            <button type="button" id="restoreBtn">Restore from this file</button>
+            <span class="resultMsg" id="restoreMsg"></span>
+        </div>
+    </div>
+
+    <div class="panel">
+        <button type="button" class="infoBtn sectionAbout" data-target="sourceAbout">ⓘ About</button>
+        <h2>Which database exports come from</h2>
+        <div class="fileInfo" id="sourceAbout" hidden>
+            Every export records which database it read, so a package can be told apart from one
+            produced against a different server. Where the read-only account has been granted
+            <code>EXECUTE</code> on <code>pg_control_system()</code> (offered by
+            <code>connect-database.sh</code>) that is the cluster's own identifier, fixed when
+            the cluster was created and unchanged by restarts, address changes or TAK Server
+            upgrades. Without that grant it falls back to catalog identifiers - the database
+            name and a pair of OIDs - which any account can read but which are small numbers two
+            unrelated servers could match by chance. The package says which of the two it got.
+            <br><br>
+            A difference between what this connection reports now and what recent exports
+            recorded is worth knowing about, but it is <strong>not</strong> in itself a sign
+            that anything is wrong: a rebuilt, upgraded or restored cluster reports a new
+            identifier while holding the same data.
+        </div>
+        <p class="muted" id="sourceIdentityStatus">Checking&hellip;</p>
+    </div>
+
+    <div class="panel">
+        <button type="button" class="infoBtn sectionAbout" data-target="schemaAbout">ⓘ About</button>
+        <h2>Database structure</h2>
+        <div class="fileInfo" id="schemaAbout" hidden>
+            A TAK Server or PostgreSQL upgrade can change the database underneath this
+            tool. Most of what that breaks is loud - a query against a table that no
+            longer exists fails, and the package README says which file failed and why.
+            What is quiet is structure that changed and still works: a column added to
+            <code>cot_router</code> changes what <code>cot_router-raw.csv</code>
+            contains, and a geometry column in a different SRID makes the map-area
+            filter return <em>nothing</em> rather than raise an error.
+            <br><br>
+            This compares the tables, their columns and types, and the PostGIS geometry
+            columns against the record made when <code>connect-database.sh</code>
+            connected this tool to the server. The same comparison runs inside every
+            export, and its result is written into that package's README and its audit
+            entry - so what the structure was when a package was built is recorded with
+            the package, not only here.
+            <br><br>
+            A difference is <strong>not</strong> in itself a sign that anything is
+            wrong: an upgrade changes structure legitimately. It is recorded so that it
+            is known rather than assumed. <strong>Approve</strong> accepts what is there
+            now as the new baseline; the log records who approved it.
+            <br><br>
+            The fuller check - which runs every statement an export sends - is
+            <code>./check-database.sh</code> on the server. Run it after an upgrade.
+        </div>
+        <p class="muted" id="schemaStatus">Checking&hellip;</p>
+        <div class="actionRow">
+            <button type="button" id="schemaApprove" disabled>Approve this structure as the baseline</button>
+            <span class="resultMsg" id="schemaApproveMsg"></span>
+        </div>
+    </div>
+
+    <div class="panel">
+        <button type="button" class="infoBtn sectionAbout" data-target="recheckAbout">ⓘ About</button>
+        <h2>Re-check folder on the TAK Server</h2>
+        <p class="muted">One-time setup on the TAK Server host, so the Export page's re-check line has
+            somewhere to keep its files. If <code>connect-database.sh</code> ran on this host, it is
+            already done - the line below is for a server that never ran it, or to add another
+            administrator to the group later.</p>
+        <!-- The app cannot see the host's folder from its container, so this
+             reports what it can know: the marker connect-database.sh left in
+             .env, and the newest re-check the server actually posted. -->
+        <div class="connStatus" id="recheckSetupStatus">Checking&hellip;</div>
+        <div class="infoBox" id="recheckAbout" hidden>
+            <p>After an export, the Export page shows the administrator one line to paste on the
+                TAK Server. It re-runs the package's statements with psql and keeps the results, per
+                case, under <code>/var/lib/takextract/recheck/&lt;case&gt;/&lt;date-time&gt;/</code>,
+                with a <code>RECHECK-INFO.txt</code> beside them. That folder is the evidence copy of
+                the server's own answer, and it outlives the server's retention purge.</p>
+            <p>psql runs as the <code>postgres</code> account and must be able to write there; the
+                administrator must be able to read, move, archive and delete the files without
+                sudo. So the folder is owned by <code>postgres</code>, in an operating-system group
+                <code>takextract</code> that holds <code>postgres</code> and the administrator accounts,
+                with mode <code>2770</code> (the group inherits down; nobody else can see it). A group,
+                not a login: nothing new can sign in anywhere. It is file-system permission only and
+                has nothing to do with the database role above or its privileges - the package README's
+                "write privilege on cot_router: none" is unchanged.</p>
+            <p>Run the line once per server, logged in as the administrator who will do re-checks;
+                then log out and back in so the group applies. To let another administrator manage the
+                files later: <code>sudo usermod -aG takextract &lt;account&gt;</code>.</p>
+        </div>
+        <code class="cmd" id="recheckSetupCmd">sudo groupadd -f takextract &amp;&amp; sudo usermod -aG takextract postgres &amp;&amp; sudo usermod -aG takextract $USER &amp;&amp; sudo mkdir -p /var/lib/takextract/recheck &amp;&amp; sudo chown postgres:takextract /var/lib/takextract/recheck &amp;&amp; sudo chmod 2770 /var/lib/takextract/recheck</code>
+        <button type="button" class="copyBtn" id="recheckSetupCopy">Copy</button>
+    </div>
+
+    <div class="panel">
+        <button type="button" class="infoBtn sectionAbout" data-target="chainAbout">ⓘ About</button>
+        <h2>Audit log integrity</h2>
+        <p class="muted">Every entry is chained to the one before it by a SHA-256; this recomputes
+            the whole chain. Read-only.</p>
+        <div class="infoBox" id="chainAbout" hidden>
+            <p>Each audit entry stores a hash of its own content together with the previous entry's
+                hash. Editing, deleting or inserting an entry after the fact changes what the chain
+                would compute from that point on, so a walk from the first chained entry to the last
+                either reproduces every stored hash or names the first entry that does not. Entries
+                written before chaining was added carry no hash and are reported as predating it,
+                not as broken. The delivery note an export entry gains when its download completes is
+                the one change excluded from the hash.</p>
+            <p>The downloaded audit log carries the same two hash columns, so the chain can be
+                checked outside this tool as well.</p>
+        </div>
+        <button type="button" id="verifyChainBtn">Verify audit log chain</button>
+        <span class="resultMsg" id="chainMsg"></span>
+    </div>
+
+    <div class="panel">
+        <h2>Check for updates</h2>
+        <p class="muted">Compares this installation with the latest release on GitHub. Read-only:
+            it shows the commands, never runs them.</p>
+        <button type="button" id="checkUpdatesBtn">Check for updates</button>
+        <div class="updateResult" id="updateResult" hidden></div>
+    </div>
+
+    <div class="panel">
+        <h2>Appearance</h2>
+        <p class="muted">Your own preference - other users aren't affected by this.</p>
+        <div class="addUserForm">
+            <select id="themeSelect">
+                <option value="system">Follow system preference</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+            </select>
+            <button type="button" id="saveThemeBtn">Save</button>
+            <span class="resultMsg" id="themeMsg"></span>
+        </div>
+    </div>
+
+        </div>
+<script nonce="{{ csp_nonce() }}">
+        var AUTH_MODE = {{ auth_mode | tojson }};
+        {% include "_shared.js.html" %}
+
+
+        // crypto.getRandomValues() (unlike crypto.subtle, used on /verify)
+        // needs no secure context - works the same over plain http:// or
+        // https://. 20 chars from a 62-character alphabet is comfortably
+        // past MIN_PASSWORD_LENGTH (10, see app.py), with no character a
+        // shell or URL would ever need escaping, so it's always safe to
+        // paste anywhere.
+        function generateRandomPassword(length) {
+            length = length || 20;
+            var alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            var bytes = new Uint8Array(length);
+            crypto.getRandomValues(bytes);
+            var pw = '';
+            for (var i = 0; i < length; i++) { pw += alphabet[bytes[i] % alphabet.length]; }
+            return pw;
+        }
+
+        // Same clipboard pattern as index.html/verify.html - needs a
+        // secure context (HTTPS or localhost), same requirement as any
+        // other navigator.clipboard use in this app.
+
+        function showMsg(el, ok, text) {
+            el.textContent = text;
+            el.className = 'resultMsg ' + (ok ? 'ok' : 'bad');
+        }
+
+        // ---------------------------------------------------------------
+        // Appearance (this account's own preference, not shared with
+        // anyone else - see /api/theme, usable by any logged-in role)
+        // ---------------------------------------------------------------
+        function loadTheme() {
+            fetch('/api/theme').then(function (r) { return r.json(); }).then(function (d) {
+                document.getElementById('themeSelect').value = d.theme;
+            });
+        }
+
+        document.querySelectorAll('.infoBtn[data-target]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var box = document.getElementById(btn.dataset.target);
+                box.hidden = !box.hidden;
+            });
+        });
+
+        fetch('/api/admin/source-identity').then(function (r) { return r.json(); }).then(function (d) {
+            var el = document.getElementById('sourceIdentityStatus');
+            if (!d.checked) {
+                el.textContent = 'Could not ask the database: ' + (d.error || 'unknown error');
+                return;
+            }
+            var weak = d.kind !== 'cluster';
+            // Every line here is a sentence and the lot are joined with two
+            // spaces, so this one needs its full stop like the rest - without
+            // it the identifier ran straight into the next sentence and read
+            // as part of the number.
+            var lines = ['This connection reports: ' + d.current +
+                         (weak ? '  (the weaker catalog fingerprint - connect-database.sh can grant'
+                               + ' the cluster identifier)' : '') + '.'];
+            if (!d.newest_export) {
+                lines.push('No export has recorded a database yet, so there is nothing to compare it with.');
+            } else if (d.matches) {
+                lines.push('The most recent export that recorded one read the same database ('
+                           + d.newest_export.when + ').');
+            } else {
+                lines.push('The most recent export that recorded one read a DIFFERENT database: '
+                           + d.newest_export.identity + ' (' + d.newest_export.when
+                           + (d.newest_export.case_id ? ', case ' + d.newest_export.case_id : '') + ').');
+                lines.push('That can simply mean the server was rebuilt, upgraded or restored - '
+                           + 'it is not by itself a sign that anything is wrong.');
+            }
+            if (d.distinct && d.distinct.length > 1) {
+                lines.push('Recent exports name ' + d.distinct.length +
+                           ' different databases, so this install has read from more than one.');
+            }
+            el.textContent = lines.join('  ');
+            el.className = d.newest_export && !d.matches ? 'warn' : 'muted';
+        }).catch(function () {
+            document.getElementById('sourceIdentityStatus').textContent =
+                'Could not ask the database.';
+        });
+
+        // The cheap half of the schema check: catalogue reads only, so this
+        // is a page load's worth of work. The full statement pass is
+        // ./check-database.sh on the server.
+        var schemaFingerprint = null;
+        function loadSchema() {
+            var el = document.getElementById('schemaStatus');
+            var btn = document.getElementById('schemaApprove');
+            el.textContent = 'Checking…';
+            el.className = 'muted';
+            btn.disabled = true;
+            fetch('/api/admin/schema-check').then(function (r) { return r.json(); }).then(function (d) {
+                if (!d.checked) {
+                    el.textContent = 'Could not ask the database: ' + (d.error || 'unknown error');
+                    el.className = 'warn';
+                    return;
+                }
+                schemaFingerprint = d.fingerprint_sha256;
+                var lines = [];
+                if (!d.has_baseline) {
+                    lines.push('No structure has been recorded for this install yet, so there '
+                               + 'is nothing to compare against. Approve below to record what '
+                               + 'is there now as the baseline, or run ./check-database.sh on '
+                               + 'the server.');
+                    btn.disabled = false;
+                } else if (!d.changes.length) {
+                    lines.push('Unchanged since it was recorded'
+                               + (d.baseline_when ? ' on ' + d.baseline_when : '') + '.');
+                    lines.push(d.table_count + ' tables, ' + d.cot_router_columns
+                               + ' columns in cot_router, PostgreSQL ' + d.server_version + '.');
+                } else {
+                    lines.push(d.changes.length + ' difference(s) since the recorded structure'
+                               + (d.baseline_when ? ' of ' + d.baseline_when : '') + ':');
+                    d.changes.forEach(function (c) {
+                        lines.push('• ' + c.detail);
+                    });
+                    lines.push('A difference is not by itself a sign that anything is wrong - '
+                               + 'an upgrade changes structure legitimately. Run '
+                               + './check-database.sh on the server for the full check, then '
+                               + 'approve this as the new baseline if it is expected.');
+                    btn.disabled = false;
+                }
+                el.textContent = lines.join('  ');
+                el.className = d.verdict === 'fail' ? 'warn' : 'muted';
+            }).catch(function () {
+                document.getElementById('schemaStatus').textContent = 'Could not ask the database.';
+            });
+        }
+        loadSchema();
+
+        document.getElementById('schemaApprove').addEventListener('click', function () {
+            var msg = document.getElementById('schemaApproveMsg');
+            var who = prompt('Record who is approving this structure as the baseline:');
+            if (!who) { return; }
+            msg.textContent = 'Recording…';
+            fetch('/api/admin/schema-check/approve-baseline', {
+                method: 'POST',
+                headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ approved_by: who, fingerprint_sha256: schemaFingerprint })
+            }).then(function (r) { return r.json(); }).then(function (d) {
+                msg.textContent = d.error ? d.error : 'Recorded.';
+                if (!d.error) { loadSchema(); }
+            }).catch(function () { msg.textContent = 'Could not record it.'; });
+        });
+
+        fetch('/api/admin/recheck-setup').then(function (r) { return r.json(); }).then(function (d) {
+            var el = document.getElementById('recheckSetupStatus');
+            // Short: the day and host from the marker ("2026-09-19T15:00:00Z on
+            // takserver by admin (connect-database.sh)"), and for the last re-check
+            // its minute and host - the path and the rest are in the audit log.
+            var parts = [];
+            if (d.marker) {
+                var m = d.marker.replace(/\s*\(.*\)\s*$/, '').replace(/^(\d{4}-\d{2}-\d{2})T\S+/, '$1');
+                parts.push('Set up ' + m);
+            }
+            if (d.last) {
+                var when = String(d.last.ts_local || d.last.ts_utc).slice(0, 16);
+                var host = d.last.where ? d.last.where.split(':')[0] : '';
+                parts.push('last re-check ' + when + (host ? ' from ' + host : '') + ' - ' + d.last.outcome);
+            }
+            if (parts.length) {
+                el.className = 'connStatus ok';
+                el.textContent = '\u2713 ' + parts.join(' \u00b7 ');
+            } else {
+                el.className = 'connStatus';
+                el.textContent = 'Not recorded as set up on this server: run connect-database.sh, or the line below, once.';
+            }
+        }).catch(function () {
+            var el = document.getElementById('recheckSetupStatus');
+            el.className = 'connStatus'; el.textContent = 'Could not check.';
+        });
+
+        document.getElementById('recheckSetupCopy').addEventListener('click', function () {
+            var btn = this, text = document.getElementById('recheckSetupCmd').textContent;
+            if (!navigator.clipboard) { btn.textContent = 'No HTTPS'; setTimeout(function () { btn.textContent = 'Copy'; }, 2000); return; }
+            navigator.clipboard.writeText(text).then(function () {
+                btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1500);
+            }).catch(function () { btn.textContent = 'Copy failed'; });
+        });
+
+        document.getElementById('verifyChainBtn').addEventListener('click', function () {
+            var msg = document.getElementById('chainMsg');
+            msg.textContent = 'Checking...';
+            fetch('/api/admin/audit-chain').then(function (r) { return r.json(); }).then(function (d) {
+                if (d.error) { showMsg(msg, false, d.error); return; }
+                var text = d.ok
+                    ? 'Chain intact: ' + d.checked + ' entr' + (d.checked === 1 ? 'y' : 'ies') + ' verified' +
+                      (d.first_chained_id ? ' (entries ' + d.first_chained_id + ' to ' + d.last_id + ')' : '') +
+                      (d.unchained ? '; ' + d.unchained + ' older entr' + (d.unchained === 1 ? 'y' : 'ies') + ' predate chaining' : '') + '.'
+                    : 'CHAIN BROKEN at entry ' + d.broken_id + ': ' + d.reason + ' (' + d.checked + ' entries verified before it).';
+                showMsg(msg, d.ok, text);
+            }).catch(function (e) { showMsg(msg, false, String(e)); });
+        });
+
+        document.getElementById('saveThemeBtn').addEventListener('click', function () {
+            var msg = document.getElementById('themeMsg');
+            var theme = document.getElementById('themeSelect').value;
+            fetch('/api/theme', {
+                method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ theme: theme }),
+            }).then(function (r) { return r.json(); }).then(function (d) {
+                if (d.error) { showMsg(msg, false, d.error); return; }
+                showMsg(msg, true, 'Saved.');
+                // Instant feedback on this page too, not just a message -
+                // no reload needed to see whether this was the right pick.
+                if (theme === 'system') {
+                    document.documentElement.removeAttribute('data-theme');
+                } else {
+                    document.documentElement.setAttribute('data-theme', theme);
+                }
+            });
+        });
+
+        // ---------------------------------------------------------------
+        // Users
+        // ---------------------------------------------------------------
+        function loadUsers() {
+            fetch('/api/admin/users').then(function (r) { return r.json(); }).then(function (rows) {
+                var body = document.getElementById('usersBody');
+                if (!rows.length) {
+                    body.innerHTML = '<tr><td colspan="5" class="muted">No users yet.</td></tr>';
+                    return;
+                }
+                body.innerHTML = rows.map(function (u) {
+                    var pwCell = AUTH_MODE === 'local'
+                        ? '<td>' + (u.has_password ? 'set' : '<span class="muted">not set</span>') + '</td>'
+                        : '';
+                    var resetBtn = AUTH_MODE === 'local'
+                        ? '<button type="button" class="resetPwBtn" data-id="' + u.id + '" ' +
+                          'data-username="' + esc(u.username) + '">Reset password</button>'
+                        : '';
+                    return '<tr>' +
+                        '<td>' + esc(u.username) + '</td>' +
+                        '<td>' +
+                            '<select class="roleSelect" data-id="' + u.id + '" data-username="' + esc(u.username) + '">' +
+                                '<option value="admin"' + (u.role === 'admin' ? ' selected' : '') + '>admin</option>' +
+                                '<option value="viewer"' + (u.role === 'viewer' ? ' selected' : '') + '>viewer</option>' +
+                            '</select>' +
+                        '</td>' +
+                        pwCell +
+                        '<td>' + esc((u.created_ts_utc || '').replace('T', ' ').slice(0, 19)) + '</td>' +
+                        '<td class="rowActions">' + resetBtn +
+                            '<button type="button" class="dangerBtn deleteUserBtn" data-id="' + u.id + '" ' +
+                            'data-username="' + esc(u.username) + '">Delete</button>' +
+                        '</td>' +
+                    '</tr>';
+                }).join('');
+            });
+        }
+
+        // Only present in local mode (see the Jinja conditional around
+        // these three - all guarded the same way, since all three only
+        // ever exist together).
+        var genPasswordBtn = document.getElementById('genPasswordBtn');
+        if (genPasswordBtn) {
+            genPasswordBtn.addEventListener('click', function () {
+                document.getElementById('newPassword').value = generateRandomPassword(20);
+            });
+        }
+
+        // Separate from Generate - copies whatever's actually in the
+        // field right now, whether that's a generated password or one
+        // typed in by hand, not just whatever Generate last produced.
+        var copyPasswordBtn = document.getElementById('copyPasswordBtn');
+        if (copyPasswordBtn) {
+            copyPasswordBtn.addEventListener('click', function () {
+                copyToClipboard(document.getElementById('newPassword').value, copyPasswordBtn);
+            });
+        }
+
+        var togglePasswordBtn = document.getElementById('togglePasswordBtn');
+        if (togglePasswordBtn) {
+            togglePasswordBtn.addEventListener('click', function () {
+                var pwEl = document.getElementById('newPassword');
+                var showing = pwEl.type === 'text';
+                pwEl.type = showing ? 'password' : 'text';
+                togglePasswordBtn.textContent = showing ? 'Show' : 'Hide';
+            });
+        }
+
+        document.getElementById('addUserBtn').addEventListener('click', function () {
+            var msg = document.getElementById('addUserMsg');
+            var body = {
+                username: document.getElementById('newUsername').value.trim(),
+                role: document.getElementById('newRole').value,
+            };
+            var pwEl = document.getElementById('newPassword');
+            if (pwEl) { body.password = pwEl.value; }
+            fetch('/api/admin/users', {
+                method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify(body),
+            }).then(function (r) { return r.json(); }).then(function (d) {
+                if (d.error) { showMsg(msg, false, d.error); return; }
+                showMsg(msg, true, 'Saved.');
+                document.getElementById('newUsername').value = '';
+                if (pwEl) { pwEl.value = ''; }
+                loadUsers();
+            });
+        });
+
+        // Delegated - the table body is rebuilt on every loadUsers() call,
+        // so per-row listeners would need re-attaching every time anyway.
+        document.getElementById('usersBody').addEventListener('change', function (e) {
+            if (!e.target.classList.contains('roleSelect')) { return; }
+            var sel = e.target;
+            fetch('/api/admin/users', {
+                method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({ username: sel.dataset.username, role: sel.value }),
+            }).then(function (r) { return r.json(); }).then(function (d) {
+                if (d.error) { alert(d.error); loadUsers(); }
+            });
+        });
+
+        document.getElementById('usersBody').addEventListener('click', function (e) {
+            var delBtn = e.target.closest('.deleteUserBtn');
+            if (delBtn) {
+                if (!confirm('Delete user "' + delBtn.dataset.username + '"? This cannot be undone.')) { return; }
+                fetch('/api/admin/users/' + delBtn.dataset.id + '/delete',
+                      { method: 'POST', headers: csrfHeaders() })
+                    .then(function (r) { return r.json(); }).then(function (d) {
+                        if (d.error) { alert(d.error); return; }
+                        loadUsers();
+                    });
+                return;
+            }
+            var resetBtn = e.target.closest('.resetPwBtn');
+            if (resetBtn) {
+                var pw = prompt('New password for "' + resetBtn.dataset.username + '":');
+                if (!pw) { return; }
+                fetch('/api/admin/users/' + resetBtn.dataset.id + '/reset-password', {
+                    method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ password: pw }),
+                }).then(function (r) { return r.json(); }).then(function (d) {
+                    alert(d.error || 'Password reset.');
+                });
+            }
+        });
+
+        // ---------------------------------------------------------------
+        // TAK Server connection settings
+        // ---------------------------------------------------------------
+        function settingsForm() {
+            return {
+                db_host: document.getElementById('dbHost').value.trim(),
+                db_port: document.getElementById('dbPort').value.trim(),
+                db_name: document.getElementById('dbName').value.trim(),
+                db_user: document.getElementById('dbUser').value.trim(),
+                db_password: document.getElementById('dbPassword').value,
+            };
+        }
+
+        function loadSettings() {
+            return fetch('/api/admin/settings').then(function (r) { return r.json(); }).then(function (d) {
+                document.getElementById('dbHost').value = d.db_host || '';
+                document.getElementById('dbPort').value = d.db_port || '';
+                document.getElementById('dbName').value = d.db_name || '';
+                document.getElementById('dbUser').value = d.db_user || '';
+                document.getElementById('dbPassword').placeholder =
+                    d.db_password_set ? 'Leave blank to keep the current password' : '(no password set)';
+            });
+        }
+
+        // At-a-glance state of the SAVED connection settings. Deliberately
+        // not the same question as the "Test connection" button beside it:
+        // that one tests whatever is currently typed into the form, which is
+        // the right thing when trying out a new host before committing to it.
+        // This reports what the tool would actually use right now, so the two
+        // can legitimately disagree while an edit is unsaved.
+        function setConnStatus(state, label, detail) {
+            var el = document.getElementById('connStatus');
+            el.className = 'connStatus ' + state;
+            el.textContent = label;
+            el.title = detail;
+        }
+
+        function refreshConnStatus() {
+            var host = document.getElementById('dbHost').value.trim();
+            var user = document.getElementById('dbUser').value.trim();
+            // A fresh install has nothing entered yet. Calling that
+            // "Disconnected" would report a fault where nothing is wrong -
+            // it simply hasn't been set up - so it gets its own state, the
+            // same "unknown is not zero" distinction this codebase makes
+            // elsewhere (see exports.py's channels_excluded handling).
+            if (!host || !user) {
+                setConnStatus('warn', 'Not configured',
+                    'No TAK Server host/user saved yet. Fill in the fields below and press Save.');
+                return;
+            }
+            setConnStatus('checking', 'Checking...', 'Contacting the TAK Server database...');
+            // Empty body on purpose: every field falls back to the SAVED
+            // value server-side (see admin_test_connection), so this reports
+            // the stored configuration rather than unsaved form edits.
+            fetch('/api/admin/test-connection', {
+                method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                body: '{}',
+            }).then(function (r) { return r.json(); }).then(function (d) {
+                if (d.ok) {
+                    setConnStatus('ok', 'Connected',
+                        'The saved settings reached the TAK Server database. Click to re-check.');
+                } else {
+                    setConnStatus('bad', 'Disconnected', (d.error || 'Connection failed.') +
+                        '  -  click to re-check.');
+                }
+            }).catch(function () {
+                // The check itself failed (app down, network, blocked) - which
+                // is not the same as the database answering "no", so say so
+                // rather than blaming the TAK Server.
+                setConnStatus('bad', 'Unknown',
+                    'The status check could not be completed. Click to retry.');
+            });
+        }
+
+        document.getElementById('connStatus').addEventListener('click', refreshConnStatus);
+
+        document.getElementById('testConnBtn').addEventListener('click', function () {
+            var msg = document.getElementById('settingsMsg');
+            showMsg(msg, true, 'Testing...');
+            fetch('/api/admin/test-connection', {
+                method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify(settingsForm()),
+            }).then(function (r) { return r.json(); }).then(function (d) {
+                showMsg(msg, d.ok, d.ok ? 'Connection OK.' : d.error);
+            });
+        });
+
+        document.getElementById('saveSettingsBtn').addEventListener('click', function () {
+            var msg = document.getElementById('settingsMsg');
+            fetch('/api/admin/settings', {
+                method: 'POST', headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify(settingsForm()),
+            }).then(function (r) { return r.json(); }).then(function (d) {
+                if (d.error) { showMsg(msg, false, d.error); return; }
+                showMsg(msg, true, 'Saved.');
+                document.getElementById('dbPassword').value = '';
+                loadSettings().then(refreshConnStatus);
+            });
+        });
+
+        // ---------------------------------------------------------------
+        // Restore from an uploaded backup
+        // ---------------------------------------------------------------
+        document.getElementById('restoreBtn').addEventListener('click', function () {
+            var msg = document.getElementById('restoreMsg');
+            var file = document.getElementById('restoreFile').files[0];
+            if (!file) { showMsg(msg, false, 'Choose a file first.'); return; }
+            if (!confirm('This replaces every user, the entire audit log, and the connection ' +
+                         'settings on THIS machine with what\'s in "' + file.name + '". ' +
+                         'This cannot be undone. Continue?')) {
+                return;
+            }
+            var formData = new FormData();
+            formData.append('backup', file);
+            showMsg(msg, true, 'Restoring...');
+            // No Content-Type header here - the browser sets the correct
+            // multipart boundary itself when the body is a FormData, and
+            // setting one manually would break that.
+            fetch('/api/admin/restore', {
+                method: 'POST', headers: csrfHeaders(), body: formData,
+            }).then(function (r) { return r.json(); }).then(function (d) {
+                if (d.error) { showMsg(msg, false, d.error); return; }
+                showMsg(msg, true, 'Restored - reloading...');
+                // A full reload, not just loadUsers()/loadSettings() -
+                // the restore may have changed THIS session's own account
+                // (a different role, or it may not exist in the restored
+                // data at all), so the safest thing is to let the next
+                // request re-establish who's actually signed in now.
+                setTimeout(function () { window.location.reload(); }, 1000);
+            }).catch(function (e) {
+                showMsg(msg, false, String(e));
+            });
+        });
+
+        // ---------------------------------------------------------------
+        // Check for updates
+        // ---------------------------------------------------------------
+        // Deliberately not run automatically on page load - this makes an
+        // outbound network call (git fetch, server-side) with unpredictable
+        // latency, so it only happens when explicitly asked for.
+        function renderUpdateResult(d) {
+            var box = document.getElementById('updateResult');
+            box.hidden = false;
+            if (!d.checked) {
+                box.className = 'updateResult muted';
+                box.textContent = 'Could not check: ' + d.error;
+                return;
+            }
+            if (d.up_to_date) {
+                box.className = 'updateResult ok';
+                box.textContent = 'Up to date (' + d.current_commit + ').';
+                return;
+            }
+            // Docker: the actual update commands run on the HOST, in the
+            // directory holding docker-compose.yml - not inside the
+            // running container itself (no docker-compose or Docker
+            // daemon access from in there). Bare metal: restart via
+            // tak-extract.service if that's how this is running; if not
+            // (a raw gunicorn command, or dev mode), restart however this
+            // is normally run instead.
+            // sudo on the compose line: connect-database.sh leaves .env
+            // root-owned and 0600 because it holds the database password,
+            // so `docker compose` as an ordinary account fails with
+            // "open .env: permission denied" - and compose reports that
+            // and stops, so the pull succeeds and nothing is rebuilt.
+            // Harmless where .env is not root-owned.
+            var commands = d.in_container
+                ? 'git pull\nsudo docker compose up -d --build'
+                : 'cd ' + (d.install_dir || '.') + '\ngit pull\nsudo systemctl restart tak-extract';
+            var note = d.in_container
+                ? 'Run on the Docker HOST, in this repo\'s directory - not inside the running container. '
+                  + 'sudo because .env is owner-only.'
+                : 'Run as an account that can write ' + (d.install_dir || 'the install directory') +
+                  '. Assumes tak-extract.service - if this runs some other way, restart however you '
+                  + 'normally do instead.';
+            var html = '';
+            if (d.ahead_count > 0) {
+                html += '<div>This checkout has ' + d.ahead_count + ' local commit(s) not on ' +
+                    'GitHub - unexpected for a deployed install. Nothing to pull.</div>';
+            } else {
+                html += '<div>' + d.behind_count + ' commit(s) behind (' + esc(d.current_commit) +
+                    ' → ' + esc(d.latest_commit) + ').</div>';
+                if (d.compare_url) {
+                    html += '<div><a href="' + esc(d.compare_url) + '" target="_blank" rel="noopener">' +
+                        'See what changed on GitHub</a></div>';
+                }
+                html += '<pre id="updateCommands">' + esc(commands) + '</pre>';
+                html += '<div class="muted" style="font-size:12px;">' + esc(note) + '</div>';
+                html += '<button type="button" id="copyUpdateCmdBtn" class="copyBtn">Copy commands</button>';
+            }
+            box.className = 'updateResult';
+            box.innerHTML = html;
+        }
+
+        document.getElementById('checkUpdatesBtn').addEventListener('click', function () {
+            var btn = this;
+            btn.disabled = true;
+            var original = btn.textContent;
+            btn.textContent = 'Checking...';
+            fetch('/api/admin/check-updates').then(function (r) { return r.json(); }).then(function (d) {
+                btn.disabled = false;
+                btn.textContent = original;
+                renderUpdateResult(d);
+            }).catch(function (e) {
+                btn.disabled = false;
+                btn.textContent = original;
+                renderUpdateResult({ checked: false, error: String(e) });
+            });
+        });
+
+        // Delegated - #updateCommands/#copyUpdateCmdBtn are only created
+        // inside renderUpdateResult(), rebuilt on every check.
+        document.getElementById('updateResult').addEventListener('click', function (e) {
+            if (e.target.id !== 'copyUpdateCmdBtn') { return; }
+            var text = document.getElementById('updateCommands').textContent;
+            copyToClipboard(text, e.target);
+        });
+
+        loadTheme();
+        loadUsers();
+        loadSettings().then(refreshConnStatus);
+    </script>
+</body>
+</html>

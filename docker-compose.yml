@@ -1,0 +1,94 @@
+# No `db` service here on purpose - this app connects OUT to the TAK
+# Server's existing Postgres (DB_HOST/PORT/NAME/USER/PASSWORD, admin-
+# editable via /admin - see get_connection()/get_setting() in app.py), the
+# same on an all-in-one TAK Server box or a split one where Postgres lives
+# on its own machine. It never hosts a database of its own.
+#
+# Port binding matches infra-TAK's own documented module convention
+# exactly (confirmed via github.com/takwerx/infra-TAK's docs, see
+# NOTES.md): the web UI on 127.0.0.1:<host-port>:<container-port> -
+# loopback only, so whatever reverse proxy is actually reachable from
+# outside (Caddy under infra-TAK, nginx, etc.) is what's actually exposed.
+#
+# BIND_ADDR (default 127.0.0.1) is the one exception: set it to 0.0.0.0
+# (or a specific host IP) together with SERVE_TLS=true in .env if this
+# app should terminate its own TLS and be reached directly, with no
+# reverse proxy in front at all - see README.md and .env.example. Leave
+# it at the default for the (more common) reverse-proxy-fronted setup;
+# changing only SERVE_TLS without also changing this would generate and
+# serve a cert nobody outside this host could ever actually reach.
+services:
+  web:
+    build: .
+    env_file: .env
+    # AUDIT_DB overrides whatever's in .env (env_file values lose to an
+    # explicit environment: entry for the same key) - the sqlite file
+    # holding users/settings/the audit log has to live on the mounted
+    # volume below, not the container's own disposable filesystem,
+    # regardless of what path a bare-metal install's .env points at.
+    environment:
+      - AUDIT_DB=/app/data/audit.sqlite
+    # ${PORT:-8080} - the SAME variable app.py reads for its own printed
+    # login-URL message (see bootstrap_admin()), so there's one setting to
+    # change, not two that can drift apart. Only the HOST side needs to be
+    # configurable: it's the one that can collide with another container
+    # or service already using 8080 on this machine, which `docker compose
+    # up` otherwise fails on outright with no automatic fallback. The
+    # container's OWN internal port (right of the colon) stays fixed -
+    # nothing outside this container's own network namespace needs to
+    # know or avoid it, since Docker's own port mapping is what translates
+    # between the two.
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:${PORT:-8080}:8080"
+    # :z relabels ./data so an SELinux-enforcing host (Rocky/RHEL's default)
+    # actually lets the container write to it - a plain bind mount fails
+    # there with "Permission denied" even after chown'ing it correctly,
+    # since SELinux enforces on top of normal Unix permissions, not instead
+    # of them. A no-op on non-SELinux hosts (Ubuntu, Debian, etc.), so this
+    # is safe to apply unconditionally rather than only on Rocky/RHEL.
+    volumes:
+      - ./data:/app/data:z
+    restart: unless-stopped
+    # `docker compose ps` otherwise only shows "Up" as long as the gunicorn
+    # PROCESS is alive, even if the app inside it never came up cleanly (a
+    # bad AUTH_MODE/SECRET_KEY would actually crash-loop it and already show
+    # as "Restarting", but a subtler in-app problem wouldn't). This actually
+    # asks the app to answer an HTTP request, so "healthy" means Flask is
+    # genuinely serving, not just that the process exists. /login needs no
+    # auth in either AUTH_MODE and answers fast (200 in local mode, a
+    # redirect in authentik mode) - either response proves the app is
+    # alive; only a connection failure (server not answering at all) counts
+    # as unhealthy. Pure python3 (already in the image) + urllib - no curl,
+    # no extra package.
+    healthcheck:
+      # List (exec) form, not a shell string - runs python3 directly with
+      # no intermediate `sh -c`, so the script below needs no shell-level
+      # quote-escaping at all. Reads SERVE_TLS from its OWN environment
+      # (this check runs inside the same container, so it sees the exact
+      # same settings gunicorn.conf.py used) to pick http vs https - a
+      # plain http request against an HTTPS-only gunicorn (SERVE_TLS=true)
+      # would otherwise fail here and misreport a genuinely healthy
+      # container as unhealthy. Certificate verification is deliberately
+      # disabled for this one internal check only: it's confirming
+      # "does 127.0.0.1:8080 answer at all," never leaves the container,
+      # and a self-signed cert is expected there by design in that mode -
+      # this has nothing to do with how a real browser should treat it.
+      test:
+        - CMD
+        - python3
+        - -c
+        - |
+          import os, ssl, sys, urllib.error, urllib.request
+          _tls = os.environ.get("SERVE_TLS", "false").strip().lower() in ("true", "1", "yes")
+          _url = ("https" if _tls else "http") + "://127.0.0.1:8080/login"
+          _ctx = ssl._create_unverified_context() if _tls else None
+          try:
+              urllib.request.urlopen(_url, timeout=3, context=_ctx)
+          except urllib.error.HTTPError:
+              pass
+          except Exception:
+              sys.exit(1)
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

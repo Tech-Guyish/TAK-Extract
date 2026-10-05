@@ -1,0 +1,69 @@
+# Starter systemd unit for a Linux bare-metal production install (gunicorn
+# behind systemd instead of hand-running it in a terminal/tmux session, or
+# it silently dying on logout/reboot with nothing to bring it back). Not
+# needed for Docker - docker-compose.yml's `restart: unless-stopped`
+# already covers this for that path.
+#
+# Copy to /etc/systemd/system/tak-extract.service, then edit User/Group,
+# WorkingDirectory, and the venv path in ExecStart below to match wherever
+# this was actually installed - there's no single fixed convention for
+# that yet (see README.md's Quick Start (bare metal)), so these are
+# placeholders, not real paths. Then:
+#
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now tak-extract
+#   sudo systemctl status tak-extract      # confirm it's actually running
+#   sudo journalctl -u tak-extract -f      # follow its logs (incl. the
+#                                          # one-time bootstrap admin
+#                                          # password on first start)
+
+[Unit]
+Description=TAK-Extract
+After=network.target
+
+[Service]
+Type=simple
+# A dedicated, non-privileged user - not root, and not whichever personal
+# account happened to run the install. Create one first if it doesn't
+# already exist:
+#   sudo useradd --system --create-home --home-dir /opt/tak-extract --shell /usr/sbin/nologin takextract
+User=takextract
+Group=takextract
+
+# Everything this service creates is owner-only. Without it the default
+# 0022 applies and Python's sqlite3 creates audit.sqlite at 0644 - and the
+# takextract GROUP is not a neutral party: connect-database.sh adds the
+# postgres account and the administrators to it so they can share the
+# re-check folder. 0644 would hand them the audit log, the bootstrap
+# admin's password hash, and the TAK Server password, which is stored in
+# app_settings in plaintext. The data directory is 700 for the same reason.
+UMask=0077
+
+# Wherever this repo was actually cloned to.
+WorkingDirectory=/opt/tak-extract
+
+# .env lives here too (see README.md) - systemd reads it directly with no
+# extra parsing step, same plain KEY=value format either way.
+EnvironmentFile=/opt/tak-extract/.env
+
+# The venv's own gunicorn, not a bare `gunicorn` off $PATH - avoids
+# accidentally picking up a different install (or none) outside the venv
+# this app's dependencies were actually installed into. Bind address,
+# port, workers, and (if SERVE_TLS=true in .env) the self-signed TLS cert
+# are all decided by gunicorn.conf.py, reading the exact same
+# EnvironmentFile= vars as this unit - one place to change PORT/SERVE_TLS
+# for both, instead of this file needing its own copy of --bind.
+ExecStart=/opt/tak-extract/venv/bin/gunicorn -c gunicorn.conf.py app:app
+
+Restart=on-failure
+RestartSec=5
+
+# Baseline hardening - costs nothing here since this app writes only to
+# its own AUDIT_DB path and needs no other filesystem access once running.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/tak-extract
+
+[Install]
+WantedBy=multi-user.target

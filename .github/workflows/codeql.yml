@@ -1,0 +1,56 @@
+name: CodeQL
+
+# Static analysis of the Python and JavaScript in this repository, run by
+# GitHub on every push and PR to master and weekly on a schedule (so a
+# newly-published query catches something in code that has not changed).
+#
+# Code scanning is free on PUBLIC repositories. On a private repository it
+# needs GitHub Advanced Security, so until this repo is public these runs
+# will fail with a "code scanning is not enabled" error - that is expected,
+# not a broken workflow, and it starts working by itself on publication.
+#
+# The weekly slot is deliberately not the same day as the pip-audit
+# schedule: two failures arriving together are easier to conflate than two
+# arriving apart.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    - cron: "0 13 * * 3"  # every Wednesday, 13:00 UTC
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    name: Analyze ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    permissions:
+      # Only what uploading results needs. Everything else stays default.
+      security-events: write
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # javascript-typescript covers the inline <script> blocks in
+        # templates/, which is where this project's client-side logic
+        # actually lives - there is no separate .js file to scan.
+        language: [python, javascript-typescript]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          language: ${{ matrix.language }}
+          # security-extended adds the lower-severity security queries;
+          # worth the extra minutes on a codebase this size.
+          queries: security-extended
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

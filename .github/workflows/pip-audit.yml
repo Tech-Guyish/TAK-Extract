@@ -1,0 +1,44 @@
+name: Dependency security audit
+
+# Runs on every push/PR to master (so a newly-introduced dependency gets
+# checked immediately), AND on a weekly schedule (so a vulnerability
+# disclosed AFTER the fact - in a package this repo already pinned weeks
+# or months ago, with no new push to trigger a check - still gets caught
+# instead of waiting for the next unrelated commit). workflow_dispatch
+# adds a manual "Run workflow" button for an on-demand check any time.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    - cron: "0 13 * * 1"  # every Monday, 13:00 UTC
+  workflow_dispatch:
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Audit requirements.txt
+        run: pip-audit -r requirements.txt
+
+      - name: Audit gunicorn (Dockerfile-only, not in requirements.txt)
+        run: |
+          # gunicorn is deliberately kept out of requirements.txt (it
+          # doesn't run on Windows, and this file is shared with local
+          # Windows dev - see Dockerfile) - installed as its own pip step
+          # there instead. Read the pin straight out of the Dockerfile
+          # rather than hardcoding a second copy of the version number
+          # here, so this can't silently audit a stale value after the
+          # Dockerfile's own pin is bumped.
+          grep -oE 'gunicorn==[0-9][0-9.]*' Dockerfile | head -1 > /tmp/gunicorn-check.txt
+          cat /tmp/gunicorn-check.txt
+          pip-audit -r /tmp/gunicorn-check.txt

@@ -1,0 +1,1679 @@
+<!DOCTYPE html>
+<!-- data-theme reflects the logged-in account's own preference (set on
+     /admin's Appearance panel), rendered server-side - not a per-page/
+     per-browser choice, so there's no client-side script needed to apply
+     it and no flash of the wrong theme to guard against. 'system' (the
+     default) means no attribute at all: the prefers-color-scheme media
+     query below decides on its own. -->
+<html{% if theme == 'dark' %} data-theme="dark"{% elif theme == 'light' %} data-theme="light"{% endif %}>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>TAK-Extract</title>
+    <!-- integrity= pins each file to the exact bytes this version is known
+         to serve (computed directly from these same pinned URLs) - without
+         it, a compromised or MITM'd CDN could silently serve different code
+         to every visitor of this evidentiary tool. crossorigin="anonymous"
+         is required for the browser to even check the hash on a
+         cross-origin resource at all. -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H"
+          crossorigin="anonymous"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"
+          integrity="sha384-NZLkVuBRMEeB4VeZz27WwTRvlhec30biQ8Xx7zG7JJnkvEKRg5qi6BNbEXo9ydwv"
+          crossorigin="anonymous"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder@2.4.0/dist/Control.Geocoder.css"
+          integrity="sha384-gOibXC9S5JpMrpEP0ee6wCSVHjFSEuOzLLzTUmg58qM+mJ1rI8h/aY3lS9YUmo55"
+          crossorigin="anonymous"/>
+    <style>
+        /* Without this, an element with width:100% plus a border or padding
+           renders WIDER than its container (padding/border get added on top
+           of the 100%, instead of counted inside it) - that's what was
+           pushing the page past the browser window on a laptop. This makes
+           every element measure itself the way you'd expect: 100% means
+           100%, borders and padding included. */
+        *, *::before, *::after { box-sizing: border-box; }
+
+        /* Color tokens: light values here, dark values under the media
+           query below. Every rule in this file reads a var() instead of a
+           hardcoded color, so light/dark is one switch, not a hunt through
+           every rule. color-scheme tells the browser itself to theme native
+           controls (the datetime pickers, scrollbars) to match, for free. */
+        :root {
+            color-scheme: light dark;
+            --bg: #ffffff;
+            --text: #1a1a1a;
+            --text-muted: #666666;
+            --panel-bg: #f9f9f9;
+            --panel-border: #dddddd;
+            --box-bg: #ffffff;
+            --box-border: #cccccc;
+            --btn-bg: #dcdcdc;
+            --btn-border: #a8a8a8;
+            --toggle-bg: #eeeeee;
+            --toggle-border: #999999;
+            --toggle-text: #888888;
+            --accent: #2a6fdb;
+            --accent-text: #ffffff;
+            --accent-text-muted: #dbe8ff;
+            --risk: #aa3333;
+            --map-border: #999999;
+
+            /* Spacing scale: every margin/padding/gap that governs layout
+               rhythm (not a component's own fixed size, like a button's
+               min-height, or a tiny 1-3px fine-control offset) reads one of
+               these instead of a one-off px value, the same reasoning the
+               color tokens above already follow. Not theme-dependent, so
+               defined once here rather than repeated in the dark-mode/
+               data-theme blocks below. */
+            --space-1: 4px;
+            --space-2: 8px;
+            --space-3: 12px;
+            --space-4: 16px;
+            --space-5: 20px;
+            --space-6: 24px;
+
+            /* The map's own width, and every panel/box above or below it -
+               one shared value so they all line up as one consistent
+               column instead of the map (previously its own fixed width)
+               being narrower or wider than everything around it. */
+            --content-width: 1100px;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #1a1a1a;
+                --text: #e8e8e8;
+                --text-muted: #aaaaaa;
+                --panel-bg: #262626;
+                --panel-border: #444444;
+                --box-bg: #202020;
+                --box-border: #555555;
+                --btn-bg: #454545;
+                --btn-border: #808080;
+                --toggle-bg: #333333;
+                --toggle-border: #777777;
+                --toggle-text: #bbbbbb;
+                --accent: #4a8eea;
+                --accent-text: #ffffff;
+                --accent-text-muted: #d7e8ff;
+                --risk: #ff8a8a;
+                --map-border: #666666;
+            }
+        }
+        /* data-theme is set server-side (see the <html> tag) from this
+           account's own preference on /admin - takes precedence over the
+           OS setting above regardless of which way the override goes,
+           since these selectors are more specific than a bare :root or
+           the media-query :root. */
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --bg: #1a1a1a; --text: #e8e8e8; --text-muted: #aaaaaa;
+            --panel-bg: #262626; --panel-border: #444444;
+            --box-bg: #202020; --box-border: #555555;
+            --btn-bg: #454545; --btn-border: #808080;
+            --toggle-bg: #333333; --toggle-border: #777777; --toggle-text: #bbbbbb;
+            --accent: #4a8eea; --accent-text: #ffffff; --accent-text-muted: #d7e8ff;
+            --risk: #ff8a8a; --map-border: #666666;
+        }
+        :root[data-theme="light"] {
+            color-scheme: light;
+            --bg: #ffffff; --text: #1a1a1a; --text-muted: #666666;
+            --panel-bg: #f9f9f9; --panel-border: #dddddd;
+            --box-bg: #ffffff; --box-border: #cccccc;
+            --btn-bg: #dcdcdc; --btn-border: #a8a8a8;
+            --toggle-bg: #eeeeee; --toggle-border: #999999; --toggle-text: #888888;
+            --accent: #2a6fdb; --accent-text: #ffffff; --accent-text-muted: #dbe8ff;
+            --risk: #aa3333; --map-border: #999999;
+        }
+        /* Same max-width/centering as #map and every panel/box below it -
+           without this, the header stretches to the body's own wider
+           max-width (1200px) while everything else is capped at the
+           narrower --content-width (1100px) and centered, so the title
+           sits further out than the map/panels below it instead of lining
+           up with them. */
+        /* One bar across the window on every page. The nav is right-aligned
+           inside it, so it has to be the same box everywhere or the buttons
+           move from page to page - which they did, by 87px, because this
+           used to inherit each page's own content width. The content below
+           is centred by .pageBody rather than by <body>, so this can span
+           the full width without a 100vw trick (100vw is wider than the
+           viewport whenever there is a scrollbar). */
+        .pageHeader { display: flex; justify-content: space-between; align-items: center;
+                      flex-wrap: wrap; row-gap: var(--space-2); gap: var(--space-4);
+                      padding: var(--space-5) var(--space-4) var(--space-3); }
+        .pageBody { max-width: 1200px; margin: 0 auto;
+                    padding: 0 var(--space-4) var(--space-5); }
+        .pageHeader h1 { margin: 0; }
+        .versionTag { display: block; font-size: 11px; font-weight: normal; color: var(--text-muted);
+                      letter-spacing: 0.02em; margin-top: 2px; }
+        .headerActions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+
+        /* The nav is a row of button-styled links, sitting next to the
+           page title rather than its own line above it - plain text
+           links up there competed with the page name for attention. */
+        .siteNav { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+        .siteNav a, .siteNav .current {
+            display: inline-flex; align-items: center; justify-content: center;
+            height: 32px; box-sizing: border-box; padding: 0 var(--space-3);
+            font-size: 13px; border-radius: 3px; text-decoration: none;
+            border: 1px solid var(--btn-border);
+        }
+        .siteNav a { background: var(--btn-bg); color: var(--text); cursor: pointer; }
+        .siteNav a:hover { background: var(--panel-bg); }
+        .siteNav .current {
+            background: var(--accent); color: var(--accent-text); border-color: var(--accent);
+            cursor: default;
+        }
+        .whoami { font-size: 13px; color: var(--text-muted); }
+        .logoutForm { display: inline; margin: 0; }
+        /* margin: 0 matters - some pages' generic `button` rule carries a
+           margin-right, which widened this form and moved the nav with it. */
+        .logoutLink { font-size: 13px; color: var(--text); text-decoration: underline; cursor: pointer;
+                      background: none; border: 0; padding: 0; margin: 0; font-family: inherit; }
+
+        .copyBtn { padding: 1px 6px; font-size: 11px; margin: var(--space-1) 0 0 0; }
+
+        body { font-family: sans-serif; line-height: 1.5; margin: 0; background: var(--bg); color: var(--text); }
+        #map   { height: 450px; width: 100%; max-width: var(--content-width); margin: 0 auto;
+                 border: 1px solid var(--map-border); }
+        .panel { margin-top: var(--space-4); padding: var(--space-3);
+                 border: 1px solid var(--panel-border); background: var(--panel-bg);
+                 max-width: var(--content-width); margin-left: auto; margin-right: auto; }
+        label  { display: inline-block; }
+        #timeWindowPanel { text-align: center; }
+        .timeFields { display: flex; flex-direction: column; align-items: center;
+                      gap: var(--space-2); margin-top: var(--space-3); }
+        .timeRow { display: flex; align-items: center; justify-content: center;
+                   gap: var(--space-2); }
+        input  { padding: var(--space-1); margin: var(--space-1) 0; background: var(--box-bg);
+                 color: var(--text); border: 1px solid var(--box-border); }
+        button { padding: var(--space-2) var(--space-4); font-size: 14px; margin-top: var(--space-3);
+                 margin-right: var(--space-2); background: var(--btn-bg); color: var(--text);
+                 border: 1px solid var(--btn-border); border-radius: 3px; cursor: pointer; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        /* Press feedback for a plain action button (Select all, Generate
+           Export, etc.) - lit up for exactly as long as the mouse/touch is
+           actually held down, reverting the instant it's released, same
+           as a native browser :active state but in this app's own accent
+           color instead of the barely-visible default. Toggle buttons
+           (aria-pressed) already show their own state change and are
+           deliberately excluded, since they're not plain action buttons. */
+        button:not([aria-pressed]):active { background: var(--accent); color: var(--accent-text);
+                                             border-color: var(--accent); }
+        #presetLocationsBtn.selected, #presetFullBtn.selected {
+            background: var(--accent); color: var(--accent-text); border-color: var(--accent);
+        }
+        .resultBox { margin-top: var(--space-4); padding: var(--space-3); border: 1px solid var(--box-border);
+                  background: var(--box-bg); font-family: monospace; white-space: pre-wrap; }
+        .muted { color: var(--text-muted); }
+        .mapNote { font-size: 12px; text-align: center; max-width: var(--content-width);
+                   margin-left: auto; margin-right: auto; }
+        /* The Nominatim/search-box privacy note, sat above the map and
+           right-aligned to the map's own right edge (same max-width) so it
+           reads next to the search box in that corner. Amber, not the red
+           --risk token: a standing caution, not an error. A dedicated
+           value rather than reusing --text so it stays legible on both the
+           light and dark grounds (pure yellow washes out on white). */
+        .mapWarn { font-size: 12px; text-align: right; max-width: var(--content-width);
+                   margin-left: auto; margin-right: auto; color: var(--warn); }
+        /* Amber, defined for all three theme states (bare :root = light,
+           the guarded media query = system-dark, [data-theme] = explicit
+           choice) so it's legible either way - darker on white, lighter on
+           the dark ground. */
+        :root { --warn: #9a6b00; --ok: #009900; --bad: #cc0000; }
+        @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+            --warn: #e0b34d; --ok: #4caf50; --bad: #ff6b6b; } }
+        :root[data-theme="dark"] { --warn: #e0b34d; --ok: #4caf50; --bad: #ff6b6b; }
+        :root[data-theme="light"] { --warn: #9a6b00; --ok: #009900; --bad: #cc0000; }
+        .sideBySide { display: flex; gap: var(--space-4); flex-wrap: wrap; align-items: stretch;
+                      max-width: var(--content-width); margin-left: auto; margin-right: auto; }
+        .sideBySide > * { flex: 1 1 320px; }
+        #channelCheckboxes {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+            gap: var(--space-2) var(--space-4);
+            margin-top: var(--space-2);
+        }
+        #fileCheckboxes {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: var(--space-3);
+            margin-top: var(--space-3);
+            align-items: start;
+        }
+        .fileItem { border: 1px solid var(--panel-border); border-radius: 4px; padding: var(--space-2);
+                    background: var(--box-bg); }
+        /* While a tile's Preview is open, let it span the whole grid row
+           (all auto-fill columns) instead of staying one ~280px cell wide,
+           so the 5-row sample - especially cot.csv's ~28 columns - has the
+           full width to lay out in rather than being crammed into a single
+           column and scrolling. Collapses back to a normal cell when the
+           preview closes. Only the previewing tile expands; the rest of the
+           grid reflows around it. */
+        .fileItem.previewing { grid-column: 1 / -1; }
+        .statusOk { color: var(--ok); }
+        .statusBad { color: var(--bad); }
+        .statusWarn { color: var(--warn); }
+        .infoBtn, .previewBtn { padding: 2px var(--space-2); font-size: 12px; margin-top: var(--space-2);
+                   margin-left: 0; background: var(--btn-bg); border: 1px solid var(--btn-border);
+                   border-radius: 3px; cursor: pointer; color: var(--text); }
+        /* A section's About sits at its right edge, clear of the title. In a
+           file tile the same: About right, Preview beside the tile on the left. */
+        .sectionAbout { float: right; margin-top: 0; }
+        .fileItem .infoBtn { float: right; }
+        .fileInfo, .filePreview { margin-top: var(--space-2); padding: var(--space-2); background: var(--panel-bg);
+                    border: 1px solid var(--panel-border); font-size: 13px; }
+        .risk { color: var(--risk); margin-top: var(--space-1); }
+        /* First feature on this page to show real, literal query output
+           (up to 5 columns x 5 rows) rather than a preset summary - needs
+           its own scroll container since a wide file (cot.csv's ~28
+           columns) would otherwise force the whole page wider. */
+        .previewScroll { overflow-x: auto; }
+        .previewScroll table { border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+        .previewScroll th, .previewScroll td { border: 1px solid var(--panel-border);
+                    padding: 2px var(--space-1); text-align: left; }
+
+        /* Toggle buttons for channels and files: selected = filled/accent,
+           not selected = grayed out. Click to toggle, same as pressing
+           Enter on a focused button - no checkbox target to hit precisely. */
+        .channelToggle, .fileToggle {
+            display: block; width: 100%; text-align: left;
+            padding: var(--space-2) var(--space-3); margin: 0; font-size: 13px;
+            border: 1px solid var(--toggle-border); border-radius: 4px;
+            background: var(--toggle-bg); color: var(--toggle-text); cursor: pointer;
+        }
+        .channelToggle { min-height: 36px; }
+        .fileToggle { min-height: 44px; }
+        .fileToggle .filename {
+            display: block; font-size: 11px; font-weight: normal; margin-top: 2px;
+        }
+        .channelToggle.selected, .fileToggle.selected {
+            background: var(--accent); color: var(--accent-text); border-color: var(--accent);
+        }
+        .fileToggle.selected .filename { color: var(--accent-text-muted); }
+        #generateBtn { font-size: 16px; padding: var(--space-3) var(--space-5); }
+        /* The administrator's re-check, shown once a package has downloaded. */
+        #recheckBox { margin-top: var(--space-3); padding: var(--space-3); border: 1px solid var(--panel-border);
+                      background: var(--panel-bg); }
+        #recheckBox .cmd { display: block; font-family: monospace; font-size: 12px; padding: var(--space-2);
+                           margin: var(--space-2) 0; background: var(--box-bg); border: 1px solid var(--box-border);
+                           overflow-x: auto; white-space: pre; }
+        #recheckBox ol { margin: var(--space-2) 0 0 0; padding-left: 1.4em; font-size: 13px; }
+        #recheckBox li { margin-bottom: var(--space-1); }
+        #recheckBox .copyBtn { margin: 0 0 0 var(--space-2); vertical-align: middle; }
+        /* Case / Incident and Exported For sit to the left of Generate, the
+           button pushed to the right edge; at phone width the row wraps and
+           the button drops to its own line, still right-aligned. */
+        .generateRow { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
+        .exportField { display: flex; flex-direction: column; flex: 1 1 200px; max-width: 300px; }
+        .exportField label { font-size: 13px; }
+        .exportField input { width: 100%; box-sizing: border-box; margin: 0;
+                             padding: var(--space-2); font-size: 14px; }
+        .exportField input.missing { border-color: var(--warn); }
+        .generateRow #generateBtn { margin-left: auto; margin-top: 0; }
+        #selectionSummary { margin-top: var(--space-2); }
+
+        /* The outer wrapper (className "leaflet-control-geocoder
+           leaflet-bar") carries its own white fill and drop shadow, both
+           redundant now that the input has its own styled box below.
+           Neutralized entirely rather than resized to match. !important:
+           this selector and the two rules it overrides (the plugin's own
+           .leaflet-control-geocoder, and Leaflet core's .leaflet-bar) are
+           all the same specificity. */
+        .leaflet-control-geocoder {
+            background: transparent !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+            min-width: 0 !important;
+            min-height: 0 !important;
+            /* Leaflet core adds a real 2px border here too, scoped to
+               .leaflet-touch .leaflet-bar - easy to miss on a non-touch
+               test browser. It sits on this wrapper (which doesn't hug
+               the input tight) while the input's own ring sits closer,
+               producing two concentric gray lines instead of one. */
+            border: none !important;
+        }
+        /* The geocoder plugin ships hardcoded light-mode colors, knowing
+           nothing about our theme tokens. Pinned to black-on-white here
+           rather than following --box-bg/--text: in dark mode, the
+           browser's own dark-mode form styling was fighting the plugin's
+           hardcoded backgrounds and producing barely-readable combinations
+           either way. */
+        .leaflet-control-geocoder-form input {
+            background: #ffffff; color: #000000;
+            /* Wider than the plugin's narrow 246px default, with the same
+               outward ring the Draw/Clear buttons use - this input has no
+               border at all by default, so it blended into the map
+               underneath it. */
+            width: 420px;
+            border: 0 !important;
+            box-shadow: 0 0 0 3px var(--btn-border), 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+            border-radius: 3px;
+            box-sizing: border-box;
+            height: 30px;
+            padding: 0 var(--space-2);
+        }
+        /* Removed outright rather than resized again - collapsed: false
+           above means this icon has no job left to do, and its own ring
+           was the likely source of a lingering "gray outline" after the
+           wrapper's background/shadow were already gone. */
+        .leaflet-control-geocoder-icon {
+            display: none !important;
+        }
+        .leaflet-control-geocoder-alternatives {
+            background: #ffffff; color: #000000;
+        }
+        .leaflet-control-geocoder-alternatives li {
+            color: #000000; border-color: #cccccc;
+        }
+        .leaflet-control-geocoder-alternatives li:hover,
+        .leaflet-control-geocoder-alternatives li.leaflet-control-geocoder-selected {
+            background: #eeeeee;
+        }
+
+        /* Leaflet.draw's rectangle tool is a small, unlabeled icon button
+           by default - easy to miss next to the address search box.
+           Labeled "Draw" via JS just below, styled to match
+           .leaflet-control-clear-area exactly. background-image: none is
+           required, not just a color change: Leaflet.draw's own base rule
+           paints a sprite-crop icon on top of background-color, which
+           showed as stray marks in the fill once there was a label to
+           notice them next to. */
+        .leaflet-draw-toolbar a.leaflet-draw-draw-rectangle {
+            background-color: var(--accent) !important;
+            background-image: none !important;
+            /* var(--btn-border), not var(--accent) - a ring the exact
+               same color as its own fill is invisible, same reasoning
+               .leaflet-control-clear-area's ring already uses its own
+               neutral border color rather than its own fill color. */
+            box-shadow: 0 0 0 3px var(--btn-border), 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+            width: 72px !important;
+            height: 26px !important;
+            line-height: 26px !important;
+            box-sizing: border-box !important;
+            text-align: center !important;
+            padding: 0 !important;
+            color: var(--accent-text) !important;
+            font-size: 12px !important;
+            font-weight: bold !important;
+            white-space: nowrap !important;
+        }
+        /* ClearAreaControl (see the JS near drawControl) - a plain text
+           button in Leaflet's own control-bar styling, stacked under Draw
+           automatically (same corner, position: 'topleft'). Same fixed
+           72x26 as Draw so the two match exactly instead of sizing to its
+           own text. !important throughout: this selector and Leaflet
+           core's own base rule (.leaflet-bar a, plain 26px + white
+           background) are the exact same specificity - a tie resolved by
+           source order, not "which one should apply." Without it,
+           Leaflet's own default silently won every property below, which
+           is why this wasn't actually matching Draw's size despite the
+           rule saying it should. */
+        .leaflet-control-clear-area a {
+            width: 72px !important; height: 26px !important; line-height: 26px !important;
+            box-sizing: border-box !important;
+            text-align: center !important; font-size: 12px !important; font-weight: bold !important;
+            background: var(--btn-bg) !important; color: var(--text) !important;
+            text-decoration: none !important; display: block !important;
+            border-bottom: none !important;
+            /* Draw's own ring changes its apparent outline, not just
+               color - without a matching one here, Clear read as flat
+               next to a "glowing" Draw at the same underlying size. Same
+               ring structure, Clear's own neutral color instead of
+               Draw's accent. */
+            box-shadow: 0 0 0 3px var(--btn-border), 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+        }
+        .leaflet-control-clear-area a:hover, .leaflet-control-clear-area a:focus {
+            background: var(--panel-bg) !important;
+        }
+        /* Same ring as Draw/Clear/search, on the zoom control's OUTER
+           container rather than each +/- link - it's one two-row control,
+           so one ring reads as a unified box instead of two with a seam
+           between them. */
+        .leaflet-control-zoom {
+            box-shadow: 0 0 0 3px var(--btn-border), 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="pageHeader">
+        <h1>TAK-Extract<span class="versionTag">{{ app_version.replace('TAK-Extract ', '') }}</span></h1>
+        <div class="headerActions">
+            <nav class="siteNav">
+                <span class="current">Export</span><a href="/verify">Verify &amp; Replay</a>
+                <a href="/audit">Audit Log</a><a href="/admin">System</a>
+                <a href="/guide" target="_blank" rel="noopener">Guide</a>
+            </nav>
+            {% if auth_mode == 'local' %}<span class="whoami">{{ username }}</span>
+            <form method="post" action="/logout" class="logoutForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="logoutLink">Log out</button></form>{% endif %}
+        </div>
+    </div>
+    <div class="pageBody">
+    <p class="mapWarn">⚠ The search box in the map's corner sends whatever you
+        type to OpenStreetMap's public Nominatim service for lookup.</p>
+
+    <div id="map"></div>
+    <p class="muted mapNote">Draw a rectangle on the map, set a time window, then check
+       how many records match before exporting anything.
+       <span id="centerNote"></span></p>
+
+    <div class="sideBySide">
+        <div class="panel" id="areaPanel">
+            <strong>Selected area</strong><br>
+            <span id="coords" class="muted">No area selected yet.</span>
+        </div>
+
+        <!-- Shapes pushed by software (an imported map layer) rather than
+             drawn by a person: out of the map and the export unless asked
+             for. The rule is a mark in the record itself - see
+             shapes.AUTOMATED_FEED_MARKS - and the package README states
+             what was found and what was done either way. Beside the map,
+             not under the file list, because the map's outlines follow it. -->
+        <div class="panel" id="feedShapesPanel">
+            <strong>Drawn shapes</strong>
+            <button type="button" class="infoBtn sectionAbout" id="feedShapesAboutBtn">ⓘ About</button><br>
+            <label class="muted"><input type="checkbox" id="includeFeedShapes">
+                Include shapes from automated feeds</label>
+            <div class="fileInfo" id="feedShapesAboutBox" hidden>
+                Some shapes on the server were not drawn by anyone: software pushed them
+                (an imported map layer of boundaries, for example), and the record says so
+                - it carries an element the pushing software writes
+                (<code>__nodered</code>, from Node-RED's TAK node), which a shape drawn at a
+                map does not. By default those shapes are left out of the map's outlines,
+                <code>shapes.csv</code> and the KMZ; the package README states the count and
+                the rule, and <code>manifest.csv</code> names each one. Tick this box to
+                include them; the README then records that as your choice.
+                <code>cot.csv</code> and the raw file carry their rows either way.
+            </div>
+        </div>
+    </div>
+
+    <div class="sideBySide">
+        <div class="panel" id="timeWindowPanel">
+            <strong>Time window</strong>
+            <span id="tzNote" class="muted"></span>
+            <div class="timeFields">
+                <div class="timeRow"><label for="start">Start</label>
+                    <input type="datetime-local" id="start"></div>
+                <div class="timeRow"><label for="end">End</label>
+                    <input type="datetime-local" id="end"></div>
+            </div>
+        </div>
+
+        <div id="countResult" class="resultBox muted">Positional records : 0
+Unique IDs         : 0
+Personnel          : 0
+Vehicles/equip     : 0
+Infrastructure     : 0
+Map objects        : 0</div>
+    </div>
+
+    <div class="panel" id="channelPanel">
+        <strong>Channels</strong>
+        <button type="button" class="infoBtn sectionAbout" id="channelsAboutBtn">ⓘ About</button>
+        <div class="fileInfo" id="channelsAboutBox" hidden>
+            Restrict the files below to specific channels. Shown here are the
+            channels actually seen in the current area and time window.
+            Unchecking a channel means it's never queried for the
+            channel-filterable files &mdash; not every file can be channel
+            filtered; see each file's &ldquo;About&rdquo; note.
+        </div>
+        <div id="channelCheckboxes" class="muted">
+            Draw an area and set a time window to see available channels.
+        </div>
+        <button id="channelsAllNoneBtn" type="button">Select all</button>
+    </div>
+
+    <div class="panel" id="fileSelectionPanel">
+        <strong>Files to export</strong><br>
+        <span class="muted">Pick a preset to check the files it needs, or
+            select files individually.</span><br>
+        <button id="presetLocationsBtn" type="button" aria-pressed="false">Locations Package Only</button>
+        <button id="presetFullBtn" type="button" aria-pressed="false">Full Evidence Package</button>
+        <button id="selectNoneBtn" type="button">Select none</button>
+
+        <div id="fileCheckboxes" class="muted">Loading file list...</div>
+        <div id="selectionSummary" class="muted"></div>
+        </div>
+    </div>
+
+    <div class="panel" id="generatePanel">
+        <!-- Plain fields, not window.prompt(): a prompt is answered by
+             pressing Enter, and Chrome hides the mouse pointer while you
+             type and only shows it again on the next mouse movement over
+             the page. Enter -> build -> Save As dialog meant no movement in
+             between, and the pointer stayed invisible over the page after
+             the dialog closed (seen on two machines). With fields on the
+             page the operator moves the mouse to click Generate, so the
+             pointer is visible before the dialog opens. Deliberately no
+             <form>: Enter in a field does not trigger the export, for the
+             same reason. -->
+        <div class="generateRow">
+            <div class="exportField">
+                <label for="caseId">Case / Incident</label>
+                <input type="text" id="caseId" maxlength="120" autocomplete="off" required
+                       aria-describedby="exportResult">
+            </div>
+            <div class="exportField">
+                <label for="exportedFor">Exported For</label>
+                <input type="text" id="exportedFor" maxlength="120" autocomplete="off" required
+                       aria-describedby="exportResult">
+            </div>
+            <button id="generateBtn">Generate Export</button>
+        </div>
+        <div id="exportResult" class="resultBox muted">No export run yet.</div>
+        <!-- The administrator's re-check: the package's statements re-run on
+             the TAK Server itself, by someone who is not this tool. Shown
+             here, at the moment the package exists, rather than in a file
+             inside it - nothing inside the zip should look like a second
+             confirmation. Filled in from the package's own filename. -->
+        <div id="recheckBox" hidden>
+            <strong>Optional: an administrator's re-check on the TAK Server</strong>
+            <button type="button" class="infoBtn sectionAbout" id="recheckAboutBtn">ⓘ About</button>
+            <div class="fileInfo" id="recheckAboutBox" hidden>
+                This is corroboration, over and above what is required: the package and its
+                entry in the audit log stand on their own, and one without a re-check is not
+                deficient. What it adds is a second program's word - the package was read from
+                the TAK Server database by this tool, and the re-check is the same statements run
+                again on the server by the administrator with psql, producing files this tool
+                never touched. Best run now, while the server still holds the rows. The one line below fetches the package's <code>queries.sql</code>
+                from this page's server (the same bytes as in the zip; its hash is in
+                <code>SHA256SUMS.txt</code>), runs it in one read-only snapshot into a folder kept
+                for the case, hashes every result, tars the folder, and posts <em>only the list of
+                hashes</em> back here, where it is recorded in the audit log. No location data
+                travels either way. One line in that list is expected to equal the
+                <code>cot_router-raw.csv</code> line in the package's <code>SHA256SUMS.txt</code>: the
+                raw rows are written by both this tool and psql in the same form. If they match, the
+                file the server wrote and the one in the package have the same hash. The other
+                re-check files match by content, not by hash. Do this now: the server deletes records after its retention
+                period, and after that no re-run is possible. <strong>Self-signed certificate:</strong>
+                if this page's address shows a certificate warning in the browser, tick the box so
+                <code>curl</code> on the server accepts it too (<code>-k</code>).
+            </div>
+            <div class="muted">SSH to the TAK Server, paste this line, press Enter, enter your sudo
+                password. <span class="hint">First time on a server: run the one-time setup on the
+                System page (Re-check folder).</span></div>
+            <div class="muted" style="margin-top: var(--space-2)">
+                <label>TAK-Extract address as the server reaches it:
+                    <input type="text" id="recheckBase" style="width: 24em; margin-left: var(--space-1)"></label>
+                <label style="margin-left: var(--space-3)"><input type="checkbox" id="recheckInsecure">
+                    self-signed certificate (add <code>-k</code>)</label>
+            </div>
+            <code class="cmd" id="recheckCmdA"></code>
+            <button type="button" class="copyBtn" id="recheckCopyA">Copy command</button>
+            <ol>
+                <li>psql prints a few lines, then the verdict:
+                    <code>recorded: … cot_router-raw.csv matches the package: yes</code>. The files
+                    stay on the server in <code id="recheckFolder"></code> with a
+                    <code>RECHECK-INFO.txt</code> beside them; nothing needs bringing back.</li>
+                <li>On Verify &amp; Replay, open the package: the Compare tab shows the recorded
+                    verdict on its own. Only if it says <strong>NO</strong> fetch
+                    <code id="recheckRawRecheck"></code> from that folder and choose it under
+                    Compare for a row-by-row diagnosis.</li>
+            </ol>
+            <!-- Not a <details> sitting open-ended under the command: the page
+                 watches what actually happens (see pollRecheck) and only points
+                 at this when nothing has reached it. -->
+            <div id="recheckStatus" class="muted" style="margin-top: var(--space-2)"></div>
+            <button type="button" id="recheckOtherBtn" style="margin-top: var(--space-2)"
+                    aria-expanded="false" aria-controls="recheckOtherBox">Can't use that line? Other ways to run it</button>
+            <div id="recheckOtherBox" hidden>
+                <div class="muted" style="margin-top: var(--space-2)"><strong>Run psql from any machine
+                    that can reach the database.</strong> Nothing is posted back, so the verdict below
+                    is not filled in for you: unzip the package and, in the folder
+                    holding <code id="recheckSqlName"></code>, as the read-only account this tool uses
+                    (password prompted; values from the System page):</div>
+                <code class="cmd" id="recheckCmdB"></code>
+                <button type="button" class="copyBtn" id="recheckCopyB">Copy</button>
+                <div class="hint muted">Writes the re-check files beside the script and one hash file,
+                    <code id="recheckSums"></code>. Then the hand check by eye: its
+                    <code id="recheckRawRecheck2"></code> line against the
+                    <code id="recheckRawName"></code> line in the package's <code>SHA256SUMS.txt</code>;
+                    and on Verify &amp; Replay, choose the raw re-check file under Compare and select
+                    <strong>Record this file</strong>.</div>
+            </div>
+        </div>
+    </div>
+
+        </div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH"
+            crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"
+            integrity="sha384-JP5UPxIO2Tm2o79Fb0tGYMa44jkWar53aBoCbd8ah0+LcCDoohTIYr+zIXyfGIJN"
+            crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/leaflet-control-geocoder@2.4.0/dist/Control.Geocoder.js"
+            integrity="sha384-rGCFEOuLo3qUtZTJs5enHPutiikUQ6AJroPg2rQqOhmXBPmZdvhwK2aCmkhe9gwo"
+            crossorigin="anonymous"></script>
+    <script nonce="{{ csp_nonce() }}">
+        // Empty in authentik mode (nothing to check there) - csrfHeaders()
+        // just sends an empty string in that case, which the server never
+        // inspects for a request outside local mode.
+        {% include "_shared.js.html" %}
+
+
+        document.getElementById('exportResult').addEventListener('click', function (e) {
+            if (e.target.classList.contains('copyBtn')) {
+                copyToClipboard(e.target.getAttribute('data-copy'), e.target);
+            }
+        });
+
+        // Every "selected" toggle button (channels, files) routes through
+        // this instead of touching classList directly, so the CSS state and
+        // the accessible state can't drift apart - aria-pressed is what
+        // tells a screen reader this button is a toggle that's currently
+        // on, since ".selected" alone is invisible to assistive tech.
+        function setToggled(btn, on) {
+            btn.classList.toggle('selected', on);
+            btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        }
+
+        // ---- Map -----------------------------------------------------------
+        // Geographic center of the contiguous US, zoomed out to see the whole
+        // country - a neutral placeholder until /api/extent (below) re-centers
+        // onto wherever this server's real data actually is. Deliberately NOT
+        // a specific county: that would put every OTHER deployment's map on
+        // someone else's data, and even THIS deployment briefly flashes it
+        // before the real fitBounds() lands, which reads as a bug.
+        var map = L.map('map').setView([39.8, -98.5], 4);
+
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        // Address/place search. Nominatim is the plugin's default geocoder -
+        // free, no API key, but a public third-party service: whatever's
+        // typed here is sent to OpenStreetMap to look up (see the note under
+        // the map). defaultMarkGeocode is off so it only pans/zooms rather
+        // than dropping a permanent marker that would clutter box-drawing.
+        L.Control.geocoder({
+            defaultMarkGeocode: false,
+            placeholder: 'Search for an address or place...',
+            // Always shows the actual search box, not the small icon-only
+            // button that expands into it on click - the icon (even
+            // enlarged and ringed to match everything else) was still a
+            // second thing to notice and click before getting to the part
+            // that's actually useful, and the plain-box appearance case-by-
+            // case tests still weren't landing right. Skips that step
+            // entirely: the input is just always there.
+            collapsed: false
+        }).on('markgeocode', function (e) {
+            map.fitBounds(e.geocode.bbox);
+        }).addTo(map);
+
+        // Faint, non-interactive device-motion lines and drawn-shape
+        // outlines - a visual reference so an operator drawing the box below
+        // can notice a moving device about to cross its edge, or a fire line
+        // whose anchor sits outside it; not an interactive layer (see
+        // fetchTrails()).
+        var trailsLayer = new L.LayerGroup();
+        map.addLayer(trailsLayer);
+        // Below this zoom, the viewport is wide enough that a trails request
+        // would be both expensive and visually useless (a country's worth of
+        // tangled lines) - matches /api/trails' own server-side
+        // TRAILS_MAX_VIEWPORT_SPAN_DEGREES safety cap in app.py.
+        var TRAILS_MIN_ZOOM = 11;
+
+        var drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+
+        // No edit/delete toolbar: drawing a NEW rectangle already replaces
+        // whatever was there (see CREATED below), and Leaflet.draw's own
+        // delete control needs click trash, click the shape, then a
+        // separate confirm click - a multi-step workflow this single-
+        // rectangle case doesn't need. ClearAreaControl (below) clears it
+        // in one click instead, in the same map corner.
+        var drawControl = new L.Control.Draw({
+            draw: {
+                rectangle: true,
+                polygon: false, polyline: false,
+                circle: false, marker: false, circlemarker: false
+            }
+        });
+        map.addControl(drawControl);
+        // Leaflet.draw builds its own toolbar DOM the moment addControl()
+        // runs above, so the button already exists here to grab and label -
+        // see the CSS comment on .leaflet-draw-draw-rectangle for why this
+        // is JS (setting text) plus CSS (making room for it) instead of one
+        // or the other alone.
+        var drawBtn = document.querySelector('.leaflet-draw-draw-rectangle');
+        if (drawBtn) { drawBtn.textContent = 'Draw'; }
+
+        // Holds the current bounding box, or null if nothing is drawn.
+        var bbox = null;
+
+        map.on(L.Draw.Event.CREATED, function (e) {
+            drawnItems.clearLayers();
+            drawnItems.addLayer(e.layer);
+            updateBbox(e.layer.getBounds());
+        });
+
+        function clearArea() {
+            drawnItems.clearLayers();
+            bbox = null;
+            document.getElementById('coords').textContent = 'No area selected yet.';
+            scheduleRefresh();
+        }
+
+        // A plain Leaflet control (not Leaflet.draw's own edit/remove
+        // toolbar) placed in the SAME top-left corner as the draw
+        // toolbar, so it reads as belonging to it. Leaflet stacks same-
+        // corner controls automatically - lands right under Draw with no
+        // manual positioning.
+        var ClearAreaControl = L.Control.extend({
+            options: { position: 'topleft' },
+            onAdd: function () {
+                var container = L.DomUtil.create('div', 'leaflet-bar leaflet-control-clear-area');
+                var link = L.DomUtil.create('a', '', container);
+                link.href = '#';
+                link.title = 'Clear the drawn area';
+                link.textContent = 'Clear';
+                // Leaflet's own standard guard against a click meant for a
+                // map control also registering as a click on the map
+                // underneath it (e.g. accidentally starting a new drag or
+                // interacting with whatever's at that point on the map).
+                L.DomEvent.disableClickPropagation(container);
+                L.DomEvent.on(link, 'click', function (e) {
+                    L.DomEvent.preventDefault(e);
+                    clearArea();
+                });
+                return container;
+            }
+        });
+        map.addControl(new ClearAreaControl());
+
+        function updateBbox(b) {
+            bbox = {
+                north: b.getNorth(),
+                south: b.getSouth(),
+                west:  b.getWest(),
+                east:  b.getEast()
+            };
+            document.getElementById('coords').innerHTML =
+                'North ' + bbox.north.toFixed(5) +
+                '  South ' + bbox.south.toFixed(5) +
+                '  West ' + bbox.west.toFixed(5) +
+                '  East ' + bbox.east.toFixed(5);
+            scheduleRefresh();
+        }
+
+        // Open the map on wherever this server actually has data, rather
+        // than a hardcoded location. Also learn the database session's
+        // timezone, so Start/End can say which zone they're interpreted in
+        // instead of leaving it implicit (the browser's clock and the DB
+        // session's timezone are not necessarily the same one).
+        fetch('/api/extent')
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                var tzNote = document.getElementById('tzNote');
+                var centerNote = document.getElementById('centerNote');
+                tzNote.textContent = d.db_timezone
+                    ? '(Timezone: ' + d.db_timezone + ')'
+                    : '(Timezone unknown — don’t assume it matches yours)';
+                // Auto-centering failing used to be silent - nothing told
+                // you the map just stayed at its default view instead of
+                // jumping to where the data actually is. Say so explicitly.
+                if (d.error) {
+                    centerNote.textContent = ' Map not auto-centered: ' + d.error + '.';
+                    return;
+                }
+                centerNote.textContent = '';
+                map.fitBounds([[d.south, d.west], [d.north, d.east]], {
+                    padding: [30, 30]
+                });
+            })
+            .catch(function () {
+                document.getElementById('tzNote').textContent =
+                    '(Could not reach server for timezone)';
+                document.getElementById('centerNote').textContent =
+                    ' Map not auto-centered: could not reach the server.';
+            });
+
+        // ---- Time window ---------------------------------------------------
+        function toLocalInput(d) {
+            var pad = function (n) { return String(n).padStart(2, '0'); };
+            return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' +
+                   pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' +
+                   pad(d.getMinutes());
+        }
+        var now = new Date();
+        var yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        document.getElementById('end').value = toLocalInput(now);
+        document.getElementById('start').value = toLocalInput(yesterday);
+
+        // ---- Shared helpers ------------------------------------------------
+        function setBusy(busy) {
+            var b = document.getElementById('generateBtn');
+            if (b) { b.disabled = busy; }
+        }
+
+        function includeFeedShapes() {
+            return document.getElementById('includeFeedShapes').checked;
+        }
+
+        function currentPayload() {
+            return {
+                north: bbox.north, south: bbox.south,
+                west:  bbox.west,  east:  bbox.east,
+                start: document.getElementById('start').value,
+                end:   document.getElementById('end').value
+            };
+        }
+
+        // Null means "channel list never loaded" - no filter, matching the
+        // server's own default. Once loaded, always returns the currently
+        // selected bitpos values (all of them, unless the operator excluded
+        // some), the same "send everything currently selected" pattern the
+        // file checklist already uses.
+        function currentChannelSelection() {
+            var buttons = document.querySelectorAll('.channelToggle');
+            if (!buttons.length) { return null; }
+            return Array.prototype.map.call(
+                document.querySelectorAll('.channelToggle.selected'),
+                function (b) { return parseInt(b.dataset.bitpos, 10); }
+            );
+        }
+
+        // ---- Record count preview -------------------------------------------
+        // Refreshes automatically (debounced) whenever the rectangle is
+        // redrawn or the time window changes, rather than needing a button.
+        // Also refreshes the channel list on the same trigger, since both
+        // depend on the same area/time window.
+        var refreshTimer = null;
+
+        function scheduleRefresh() {
+            if (refreshTimer) { clearTimeout(refreshTimer); }
+            refreshTimer = setTimeout(function () {
+                fetchChannels();
+                fetchCounts();
+            }, 500);
+        }
+
+        var ZERO_COUNTS = {
+            records: 0, uids: 0, personnel: 0, equipment: 0,
+            infrastructure: 0, map_objects: 0,
+        };
+
+        function formatCounts(d) {
+            var lines = [
+                ['Positional records', d.records],
+                ['Unique IDs', d.uids],
+                ['Personnel', d.personnel],
+                ['Vehicles/equip', d.equipment],
+                ['Infrastructure', d.infrastructure],
+                ['Map objects', d.map_objects]
+            ];
+            var width = lines.reduce(function (w, l) { return Math.max(w, l[0].length); }, 0);
+            return lines.map(function (l) {
+                return l[0] + ' '.repeat(width - l[0].length) + ' : ' + l[1];
+            }).join('\n');
+        }
+
+        function fetchCounts() {
+            var resultBox = document.getElementById('countResult');
+
+            if (!bbox || !document.getElementById('start').value || !document.getElementById('end').value) {
+                resultBox.textContent = formatCounts(ZERO_COUNTS);
+                return;
+            }
+
+            // No "Checking..." placeholder here on purpose: swapping the box
+            // to a shorter message and back on every channel toggle made it
+            // visibly collapse and re-expand. formatCounts() always produces
+            // the same five-line shape, so leaving the previous numbers in
+            // place until the new ones arrive keeps the box a constant size -
+            // only the numbers change, never the box.
+            var payload = currentPayload();
+            var channels = currentChannelSelection();
+            if (channels !== null) { payload.channels = channels; }
+
+            fetch('/api/count', {
+                method: 'POST',
+                headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify(payload)
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                resultBox.textContent = data.error ? ('Error: ' + data.error) : formatCounts(data);
+            })
+            .catch(function (err) {
+                resultBox.textContent = 'Could not check counts: ' + err;
+            });
+        }
+
+        // ---- Device motion trails -------------------------------------------
+        // Separate debounce from scheduleRefresh() above: trails depend on
+        // the map VIEWPORT and time window, never the drawn box or channel
+        // selection, so panning/zooming shouldn't re-trigger a count/channel
+        // fetch, and drawing/clearing the box shouldn't re-trigger a trails
+        // fetch either.
+        var trailsTimer = null;
+
+        function scheduleTrailsRefresh() {
+            if (trailsTimer) { clearTimeout(trailsTimer); }
+            trailsTimer = setTimeout(fetchTrails, 500);
+        }
+
+        function fetchTrails() {
+            trailsLayer.clearLayers();
+            if (map.getZoom() < TRAILS_MIN_ZOOM) { return; }
+            var startVal = document.getElementById('start').value;
+            var endVal = document.getElementById('end').value;
+            if (!startVal || !endVal) { return; }
+            var b = map.getBounds();
+            var payload = {
+                north: b.getNorth(), south: b.getSouth(),
+                west:  b.getWest(),  east:  b.getEast(),
+                start: startVal, end: endVal,
+                include_feed_shapes: includeFeedShapes()
+            };
+
+            fetch('/api/trails', {
+                method: 'POST',
+                headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify(payload)
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                // Fail quiet - this is a reference overlay, not core
+                // functionality, so an error here shouldn't demand attention
+                // the way a failed export would.
+                if (d.error || !d.trails) { return; }
+                d.trails.forEach(function (seg) {
+                    L.polyline(seg, {
+                        color: '#666', weight: 2, opacity: 0.55, dashArray: '4,4',
+                        interactive: false
+                    }).addTo(trailsLayer);
+                });
+                // Drawn shapes (fire lines, perimeters, circles) as outlines
+                // only - same reference-overlay terms as the trails: no
+                // fill, no label, not clickable, nothing identifying. Each
+                // is its latest version in the window, so the box can be
+                // drawn around where the shape actually is. The export's
+                // own rule then includes any shape that touches the box.
+                var outline = { color: '#444', weight: 2, opacity: 0.7, dashArray: '6,4',
+                                fill: false, interactive: false };
+                (d.shapes || []).forEach(function (sh) {
+                    if (sh.kind === 'circle') {
+                        L.circle(sh.center, Object.assign({ radius: sh.radius_m }, outline)).addTo(trailsLayer);
+                    } else if (sh.kind === 'polygon') {
+                        L.polygon(sh.latlngs, outline).addTo(trailsLayer);
+                    } else {
+                        L.polyline(sh.latlngs, outline).addTo(trailsLayer);
+                    }
+                });
+            })
+            .catch(function () { /* fail quiet, same reasoning as above */ });
+        }
+
+        map.on('moveend zoomend', scheduleTrailsRefresh);
+
+        // Keeps End a sensible 12 hours after Start by default - a
+        // starting point to narrow/widen by hand, not a restriction.
+        // Re-fires on every Start change, not just once: both fields
+        // already come pre-filled, so "only if End is empty" would
+        // almost never apply.
+        document.getElementById('start').addEventListener('change', function () {
+            if (this.value) {
+                var startDate = new Date(this.value);
+                if (!isNaN(startDate.getTime())) {
+                    document.getElementById('end').value =
+                        toLocalInput(new Date(startDate.getTime() + 12 * 60 * 60 * 1000));
+                }
+            }
+            scheduleRefresh();
+            scheduleTrailsRefresh();
+        });
+        document.getElementById('end').addEventListener('change', function () {
+            scheduleRefresh();
+            scheduleTrailsRefresh();
+        });
+
+        // ---- Channel selection ------------------------------------------------
+        document.getElementById('channelsAboutBtn').addEventListener('click', function () {
+            var box = document.getElementById('channelsAboutBox');
+            box.hidden = !box.hidden;
+        });
+
+
+        function renderChannelList(list) {
+            var box = document.getElementById('channelCheckboxes');
+            if (!list.length) {
+                box.className = 'muted';
+                box.textContent = 'No channels found for this area and time window.';
+                return;
+            }
+            box.className = '';
+            // c.name is a TAK Server channel/group name - set by whoever
+            // configures channels there, not by this app, so it's treated
+            // as untrusted the same as any other external input and run
+            // through esc() before it ever reaches innerHTML. c.bitpos is
+            // coerced through Number() for the same reason, even though it
+            // should always already be a plain integer from the database.
+            box.innerHTML = list.map(function (c) {
+                return '<button type="button" class="channelToggle selected" aria-pressed="true" data-bitpos="' +
+                       Number(c.bitpos) + '">' + esc(c.name) + '</button>';
+            }).join('');
+            // Every channel starts selected (see the "selected" class
+            // above) - the combined button's own label needs to catch up
+            // to that on every fresh render, not just when a toggle or the
+            // button itself changes something.
+            updateChannelsAllNoneBtn();
+        }
+
+        // One button whose label reflects what clicking it would DO, not a
+        // fixed caption - "Select all" when at least one channel isn't
+        // selected yet, "Select none" once every one of them already is.
+        // Replaces what used to be two separate, always-visible buttons.
+        function updateChannelsAllNoneBtn() {
+            var toggles = document.querySelectorAll('.channelToggle');
+            var allSelected = toggles.length > 0 && Array.prototype.every.call(toggles, function (b) {
+                return b.classList.contains('selected');
+            });
+            document.getElementById('channelsAllNoneBtn').textContent = allSelected ? 'Select none' : 'Select all';
+        }
+
+        function fetchChannels() {
+            var box = document.getElementById('channelCheckboxes');
+            if (!bbox || !document.getElementById('start').value || !document.getElementById('end').value) {
+                box.className = 'muted';
+                box.textContent = 'Draw an area and set a time window to see available channels.';
+                return;
+            }
+            box.className = 'muted';
+            box.textContent = 'Loading channels...';
+
+            fetch('/api/channels', {
+                method: 'POST',
+                headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify(currentPayload())
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.error) {
+                    box.className = 'muted';
+                    box.textContent = 'Error: ' + data.error;
+                    return;
+                }
+                renderChannelList(data);
+            })
+            .catch(function (err) {
+                box.className = 'muted';
+                box.textContent = 'Could not load channels: ' + err;
+            });
+        }
+
+        document.getElementById('channelCheckboxes').addEventListener('click', function (e) {
+            if (e.target.classList.contains('channelToggle')) {
+                setToggled(e.target, !e.target.classList.contains('selected'));
+                updateChannelsAllNoneBtn();
+                fetchCounts();
+            }
+        });
+        document.getElementById('channelsAllNoneBtn').addEventListener('click', function () {
+            var toggles = document.querySelectorAll('.channelToggle');
+            var allSelected = toggles.length > 0 && Array.prototype.every.call(toggles, function (b) {
+                return b.classList.contains('selected');
+            });
+            toggles.forEach(function (b) { setToggled(b, !allSelected); });
+            updateChannelsAllNoneBtn();
+            fetchCounts();
+        });
+
+        // ---- File selection --------------------------------------------------
+        // The unified list of everything exportable: the KMZ track map (a
+        // synthetic entry - it's the separate /api/locations pipeline, not
+        // one of exports.py's package files) plus the 12 optional package
+        // files. Cached so the presets can tell which group a file belongs
+        // to without a second request.
+        var fileItems = [];
+
+        function updateSelectionSummary() {
+            var summary = document.getElementById('selectionSummary');
+            var total = document.querySelectorAll('.fileToggle').length;
+            if (!total) { summary.textContent = ''; return; }
+            var selected = document.querySelectorAll('.fileToggle.selected');
+            var kmzChecked = Array.prototype.filter.call(selected, function (b) {
+                var item = fileItems.filter(function (f) { return f.filename === b.dataset.filename; })[0];
+                return item && item.group === 'kmz';
+            }).length;
+            var pkgChecked = selected.length - kmzChecked;
+            var text = selected.length + ' of ' + total + ' file(s) selected';
+            if (kmzChecked) { text += ' — KMZ track map'; }
+            if (pkgChecked) {
+                text += (kmzChecked ? ' plus ' : ' — ') + pkgChecked +
+                        ' package file(s) (manifest, README, and checksums ' +
+                        'come with these automatically)';
+            }
+            summary.textContent = text + '.';
+            updatePresetButtonStates();
+        }
+
+        // A preset button reads as "pressed" only when the CURRENT selection
+        // exactly matches what that preset would produce - not tracked as a
+        // separate on/off flag, so hand-editing an individual file
+        // afterward correctly un-presses it again rather than leaving a
+        // stale "active" preset showing. Recomputed on every selection
+        // change (called from updateSelectionSummary(), which already runs
+        // after every toggle/preset/select-none action).
+        function updatePresetButtonStates() {
+            var allToggles = document.querySelectorAll('.fileToggle');
+            var kmzMatch = true, fullMatch = true;
+            allToggles.forEach(function (b) {
+                var item = fileItems.filter(function (f) { return f.filename === b.dataset.filename; })[0];
+                var isKmz = !!(item && item.group === 'kmz');
+                var isSelected = b.classList.contains('selected');
+                if (isSelected !== isKmz) { kmzMatch = false; }
+                if (!isSelected) { fullMatch = false; }
+            });
+            setToggled(document.getElementById('presetLocationsBtn'), allToggles.length > 0 && kmzMatch);
+            setToggled(document.getElementById('presetFullBtn'), allToggles.length > 0 && fullMatch);
+        }
+
+        function renderFileList(list) {
+            fileItems = list;
+            var box = document.getElementById('fileCheckboxes');
+            box.className = '';
+            // Every field here is hardcoded server-side (see /api/optional-files
+            // in app.py) rather than user- or DB-controlled, so this was never
+            // actually exploitable - but esc() costs nothing and keeps this
+            // function consistent with every other innerHTML site in this app,
+            // rather than being the one place that quietly assumes its input
+            // will always stay trustworthy.
+            box.innerHTML = list.map(function (f) {
+                var safeId = f.filename.replace(/[^a-zA-Z0-9]/g, '_');
+                var infoId = 'info-' + safeId;
+                var previewId = 'preview-' + safeId;
+                var noteHtml = f.note ? '<div class="risk">⚠ ' + esc(f.note) + '</div>' : '';
+                return '<div class="fileItem">' +
+                       '<button type="button" class="fileToggle selected" aria-pressed="true" data-filename="' + esc(f.filename) + '">' +
+                       esc(f.label) + '<span class="filename">' + esc(f.filename) + '</span></button>' +
+                       (f.previewable === false ? '' :
+                           '<button type="button" class="previewBtn" data-target="' + previewId + '" data-filename="' + esc(f.filename) + '">Preview</button>') +
+                       '<button type="button" class="infoBtn" data-target="' + infoId + '">ⓘ About</button>' +
+                       '<div class="fileInfo" id="' + infoId + '" hidden>' +
+                       '<div><strong>Contains:</strong> ' + esc(f.contains) + '</div>' +
+                       '<div><strong>Narrowed by:</strong> ' + esc(f.narrowed_by) + '</div>' + noteHtml +
+                       '</div>' +
+                       '<div class="filePreview" id="' + previewId + '" hidden></div>' +
+                       '</div>';
+            }).join('');
+            updateSelectionSummary();
+        }
+
+        fetch('/api/optional-files')
+            .then(function (r) { return r.json(); })
+            .then(renderFileList)
+            .catch(function () {
+                document.getElementById('fileCheckboxes').textContent =
+                    'Could not load the file list.';
+            });
+
+        // closest(), not e.target: the tile button contains a
+        // display:block <span class="filename"> that takes up its own full
+        // line, so a click on the filename half of the tile landed on the
+        // span - which matched none of these classes - and silently did
+        // nothing. Half of every tile was a dead zone.
+        document.getElementById('fileCheckboxes').addEventListener('click', function (e) {
+            var toggle = e.target.closest('.fileToggle');
+            if (toggle) {
+                setToggled(toggle, !toggle.classList.contains('selected'));
+                updateSelectionSummary();
+                return;
+            }
+            var infoBtn = e.target.closest('.infoBtn');
+            if (infoBtn) {
+                var el = document.getElementById(infoBtn.getAttribute('data-target'));
+                if (!el) { return; }
+                var opening = el.hidden;
+                closeSiblingBoxes(infoBtn);
+                el.hidden = !opening;
+                return;
+            }
+            var previewBtn = e.target.closest('.previewBtn');
+            if (previewBtn) {
+                var previewEl = document.getElementById(previewBtn.getAttribute('data-target'));
+                if (!previewEl) { return; }
+                var previewOpening = previewEl.hidden;
+                closeSiblingBoxes(previewBtn);
+                previewEl.hidden = !previewOpening;
+                // Full-width only while the preview is actually showing (see
+                // .fileItem.previewing) - closeSiblingBoxes already cleared
+                // it, so just re-add it when opening.
+                var previewItem = previewBtn.closest('.fileItem');
+                if (previewItem) { previewItem.classList.toggle('previewing', !previewEl.hidden); }
+                if (!previewEl.hidden) {
+                    fetchPreview(previewBtn.getAttribute('data-filename'), previewEl);
+                }
+            }
+        });
+
+        // About and Preview share one fileItem card - opening one should
+        // close the other, not stack both open at once (found by clicking
+        // through it: they were stacking).
+        function closeSiblingBoxes(btn) {
+            var item = btn.closest('.fileItem');
+            if (!item) { return; }
+            var info = item.querySelector('.fileInfo');
+            var preview = item.querySelector('.filePreview');
+            if (info) { info.hidden = true; }
+            if (preview) { preview.hidden = true; }
+            // Closing the preview also drops the full-width span - a tile
+            // showing only its (narrow) About text shouldn't stay stretched.
+            item.classList.remove('previewing');
+        }
+
+        // Real row content, unlike the count/channel preview above - see
+        // /api/preview's own docstring for why this one writes an audit
+        // entry every time it actually runs a query (repeated opens of an
+        // already-open box each count as a fresh disclosure, since each is
+        // a fresh query against whatever the operator's current selection
+        // is right now).
+        function fetchPreview(filename, box) {
+            if (!bbox || !document.getElementById('start').value || !document.getElementById('end').value) {
+                box.textContent = 'Select an area and time window first.';
+                return;
+            }
+            box.textContent = 'Loading preview...';
+            var payload = currentPayload();
+            payload.filename = filename;
+            var channels = currentChannelSelection();
+            if (channels !== null) { payload.channels = channels; }
+
+            fetch('/api/preview', {
+                method: 'POST',
+                headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify(payload)
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.error) { box.textContent = 'Error: ' + data.error; return; }
+                if (!data.rows.length) { box.textContent = 'No matching rows.'; return; }
+                box.innerHTML = '<div class="previewScroll"><table><thead><tr>' +
+                    data.columns.map(function (c) { return '<th>' + esc(c) + '</th>'; }).join('') +
+                    '</tr></thead><tbody>' +
+                    data.rows.map(function (row) {
+                        return '<tr>' + row.map(function (v) {
+                            return '<td>' + esc(v === null ? '' : String(v)) + '</td>';
+                        }).join('') + '</tr>';
+                    }).join('') +
+                    '</tbody></table></div>';
+            })
+            .catch(function (err) {
+                box.textContent = 'Could not load preview: ' + err;
+            });
+        }
+
+        document.getElementById('selectNoneBtn').addEventListener('click', function () {
+            document.querySelectorAll('.fileToggle').forEach(function (b) { setToggled(b, false); });
+            updateSelectionSummary();
+        });
+
+        // Presets toggle: pressing an inactive one selects exactly what that
+        // package needs, so what's selected always shows what you're about
+        // to get; pressing an already-active one (button already shows
+        // "pressed" - see updatePresetButtonStates()) clears back to nothing
+        // selected, same as "Select none". Either way, any tile can still be
+        // hand-picked afterward - these are starting points, not a lock.
+        document.getElementById('presetLocationsBtn').addEventListener('click', function () {
+            var alreadyActive = this.classList.contains('selected');
+            document.querySelectorAll('.fileToggle').forEach(function (b) {
+                if (alreadyActive) { setToggled(b, false); return; }
+                var item = fileItems.filter(function (f) { return f.filename === b.dataset.filename; })[0];
+                setToggled(b, !!(item && item.group === 'kmz'));
+            });
+            updateSelectionSummary();
+        });
+        document.getElementById('presetFullBtn').addEventListener('click', function () {
+            var alreadyActive = this.classList.contains('selected');
+            document.querySelectorAll('.fileToggle').forEach(function (b) { setToggled(b, !alreadyActive); });
+            updateSelectionSummary();
+        });
+
+        // ---- Generate / download ----------------------------------------------
+        function buildPayload(caseId, forWhom, channels, extra) {
+            var payload = currentPayload();
+            payload.case_id = caseId || '';
+            payload.requested_for = forWhom || '';
+            if (channels !== null) { payload.channels = channels; }
+            for (var k in extra) { payload[k] = extra[k]; }
+            return payload;
+        }
+
+        // Runs one export call and reports into `update` as it progresses.
+        // Never rejects - a failed job shouldn't stop a sibling job (e.g. the
+        // KMZ still downloads even if the zip fails) - callers chain these
+        // with .then, not error handling.
+        function runOneExport(endpoint, label, payload, update) {
+            var started = Date.now();
+            update('Building ' + esc(label) + '...  0s');
+            var tick = setInterval(function () {
+                var secs = Math.floor((Date.now() - started) / 1000);
+                update('Building ' + esc(label) + '...  ' + secs + 's\n' +
+                       'Do not click away - this is still working.');
+            }, 250);
+            var pkgHash = 'unavailable';
+
+            return fetch(endpoint, {
+                method: 'POST',
+                headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify(payload)
+            })
+            .then(function (r) {
+                if (!r.ok) {
+                    return r.json().then(
+                        function (j) { throw new Error(j.error || ('HTTP ' + r.status)); },
+                        function () { throw new Error('HTTP ' + r.status); }
+                    );
+                }
+                pkgHash = r.headers.get('X-Package-SHA256') || 'unavailable';
+                var name = 'export';
+                var cd = r.headers.get('Content-Disposition');
+                if (cd) {
+                    var m = cd.match(/filename="([^"]+)"/);
+                    if (m) { name = m[1]; }
+                }
+                var recheckToken = r.headers.get('X-Recheck-Token') || '';
+                var recheckPrefix = r.headers.get('X-Recheck-Prefix') || '';
+                return r.blob().then(function (b) { return { blob: b, name: name, recheckToken: recheckToken, recheckPrefix: recheckPrefix }; });
+            })
+            .then(function (f) {
+                var url = URL.createObjectURL(f.blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = f.name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                // Best-effort: the file is already saved by this point, and
+                // /api/confirm only appends "delivered" to the audit row. A
+                // failure here shouldn't look like a failed export - but an
+                // unhandled rejection would still land in the console as one.
+                fetch('/api/confirm', {
+                    method: 'POST',
+                    headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify({ hash: pkgHash })
+                }).catch(function () { /* audit row stays "generated" - the file itself is fine */ });
+
+                var mb = (f.blob.size / 1048576).toFixed(1);
+                var secs = Math.floor((Date.now() - started) / 1000);
+                clearInterval(tick);
+                var hashLine = 'SHA-256: ' + esc(pkgHash);
+                if (pkgHash !== 'unavailable') {
+                    hashLine += ' <button type="button" class="copyBtn" data-copy="' +
+                        esc(pkgHash) + '">Copy</button>';
+                }
+                update(
+                    'DOWNLOADED: ' + esc(f.name) + '   (' + mb + ' MB, ' + secs + 's)\n' +
+                    hashLine
+                );
+                if (/-package\.zip$/i.test(f.name)) { showRecheck(f.recheckPrefix || f.name.replace(/-package\.zip$/i, ''), f.recheckToken, pkgHash); }
+            })
+            .catch(function (err) {
+                clearInterval(tick);
+                update('FAILED (' + esc(label) + '): ' + esc(err.message) +
+                       '\nNothing was downloaded. Recorded in the audit log.');
+            });
+        }
+
+        // The re-check block, filled in from the package's case prefix
+        // (the part of the filename before -package.zip, which is also the
+        // prefix of every file inside it).
+        // The re-check block. The server line needs three things the export
+        // response provides or the page knows: the case prefix (every file
+        // in the zip starts with it), the token minted for this package, and
+        // this page's own address - which is how the TAK Server reaches
+        // TAK-Extract, editable in case the server sees it by another name.
+        var recheck = { prefix: '', token: '', tag: '' };
+        function recheckServerCmd() {
+            var pfx = recheck.prefix, sql = pfx + '-queries.sql';
+            var base = (document.getElementById('recheckBase').value || '').trim().replace(/\/+$/, '');
+            var k = document.getElementById('recheckInsecure').checked ? ' -k' : '';
+            var url = base + '/recheck/' + recheck.token + '/';
+            // Seconds, and the first 8 of the package's SHA-256: one case can
+            // hold several exports, and two re-checks started in the same
+            // minute would otherwise write into one folder under the same
+            // filenames. The hash also says which package a folder re-checks
+            // without opening RECHECK-INFO.txt.
+            return 'D=/var/lib/takextract/recheck/' + pfx + '/$(date +%Y-%m-%dT%H-%M-%S)' + recheck.tag +
+                ' && mkdir -m 2770 -p "$D" && cd "$D"' +
+                ' && curl -fsS' + k + ' -o ' + sql + ' "' + url + sql + '"' +
+                ' && sudo -u postgres psql -d cot -f ' + sql +
+                ' && sha256sum ' + sql + ' ' + pfx + '-recheck-*.csv ' + pfx + '-recheck-snapshot.txt > ' + pfx + '-recheck-SHA256SUMS.txt' +
+                ' && tar czf ' + pfx + '-recheck.tgz ' + sql + ' ' + pfx + '-recheck-*.csv ' + pfx + '-recheck-snapshot.txt ' + pfx + '-recheck-SHA256SUMS.txt' +
+                ' && curl -fsS' + k + ' -F sums=@' + pfx + '-recheck-SHA256SUMS.txt -F tgz_sha256="$(sha256sum ' + pfx + '-recheck.tgz | cut -d\' \' -f1)"' +
+                ' -F host="$(hostname)" -F path="$D" "' + url + 'result" | tee RECHECK-INFO.txt';
+        }
+        function renderRecheckCmd() {
+            var cmd = recheckServerCmd();
+            document.getElementById('recheckCmdA').textContent = cmd;
+            document.getElementById('recheckCopyA').setAttribute('data-copy', cmd);
+        }
+        function showRecheck(prefix, token, pkgHash) {
+            recheck.prefix = prefix; recheck.token = token || '';
+            recheck.tag = (pkgHash && /^[0-9a-f]{8}/.test(pkgHash)) ? '-' + pkgHash.slice(0, 8) : '';
+            var sqlName = prefix + '-queries.sql';
+            var tail = ' -f ' + sqlName + ' && sha256sum ' + sqlName + ' ' + prefix + '-recheck-*.csv ' + prefix +
+                '-recheck-snapshot.txt > ' + prefix + '-recheck-SHA256SUMS.txt';
+            var setCmd = function (id, btn, cmd) {
+                document.getElementById(id).textContent = cmd;
+                document.getElementById(btn).setAttribute('data-copy', cmd);
+            };
+            if (!document.getElementById('recheckBase').value) {
+                document.getElementById('recheckBase').value = location.origin;
+            }
+            renderRecheckCmd();
+            setCmd('recheckCmdB', 'recheckCopyB', 'psql -h <host> -p <port> -U <account> -d cot' + tail);
+            // The workstation form with the saved connection's values (never the password).
+            fetch('/api/recheck-target').then(function (r) { return r.json(); }).then(function (t) {
+                if (t.error) { return; }
+                setCmd('recheckCmdB', 'recheckCopyB', 'psql -h ' + (t.host || '<host>') + ' -p ' + (t.port || '5432') +
+                    ' -U ' + (t.user || '<account>') + ' -d ' + (t.dbname || 'cot') + tail);
+            }).catch(function () { /* the placeholder form stays */ });
+            document.getElementById('recheckSqlName').textContent = sqlName;
+            document.getElementById('recheckFolder').textContent =
+                '/var/lib/takextract/recheck/' + prefix + '/<date-time>' + (recheck.tag || '-<package>') + '/';
+            document.getElementById('recheckSums').textContent = prefix + '-recheck-SHA256SUMS.txt';
+            document.getElementById('recheckRawName').textContent = prefix + '-cot_router-raw.csv';
+            document.getElementById('recheckRawRecheck').textContent = prefix + '-recheck-cot_router-raw.csv';
+            document.getElementById('recheckRawRecheck2').textContent = prefix + '-recheck-cot_router-raw.csv';
+            document.getElementById('recheckBox').hidden = false;
+            document.getElementById('recheckOtherBox').hidden = true;
+            document.getElementById('recheckOtherBtn').setAttribute('aria-expanded', 'false');
+            pollRecheck(recheck.token);
+        }
+        document.getElementById('recheckBase').addEventListener('input', renderRecheckCmd);
+        document.getElementById('recheckInsecure').addEventListener('change', renderRecheckCmd);
+        document.getElementById('recheckOtherBtn').addEventListener('click', function () {
+            var box = document.getElementById('recheckOtherBox');
+            var opening = box.hidden;
+            box.hidden = !opening;
+            this.setAttribute('aria-expanded', String(opening));
+        });
+
+        // Whether the TAK Server can reach this page is not something this
+        // page can test - that connection runs the other way. What it can
+        // do is watch: the server's own curl fetches queries.sql through
+        // here, and posts its hashes back the same way, so both steps show
+        // up as they happen. That is also the honest answer to "which
+        // method should I use" - the line is offered first, and the
+        // fallback is only pointed at once nothing has arrived.
+        var recheckPoll = null;
+        var RECHECK_POLL_MS = 3000;
+        var RECHECK_QUIET_MS = 90000;   // after this with nothing, name the fallback
+        var RECHECK_STOP_MS = 600000;   // stop watching; the page is not a monitor
+        function stopRecheckPoll() {
+            if (recheckPoll) { clearInterval(recheckPoll); recheckPoll = null; }
+        }
+        function setRecheckStatus(text, cls) {
+            var el = document.getElementById('recheckStatus');
+            el.textContent = text;
+            el.className = cls || 'muted';
+        }
+        function pollRecheck(token) {
+            stopRecheckPoll();
+            if (!token) { setRecheckStatus(''); return; }
+            var started = Date.now();
+            setRecheckStatus('Waiting for the server to fetch the script...');
+            recheckPoll = setInterval(function () {
+                fetch('/api/recheck-progress/' + encodeURIComponent(token))
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        if (d.error) { stopRecheckPoll(); setRecheckStatus(''); return; }
+                        var waited = Date.now() - started;
+                        if (d.results) {
+                            stopRecheckPoll();
+                            var ok = d.outcome === 'raw match';
+                            setRecheckStatus((ok ? '\u2713 ' : '\u2717 ') +
+                                'Re-check recorded' + (d.when ? ' ' + d.when : '') +
+                                (d.where ? ' from ' + d.where : '') + ' - cot_router-raw.csv ' +
+                                (ok ? 'matches the package.' : (d.outcome || 'did not match') + '.') +
+                                ' It is on the Audit Log, and on Verify & Replay under Compare.',
+                                ok ? 'statusOk' : 'statusBad');
+                            return;
+                        }
+                        if (d.fetched) {
+                            setRecheckStatus('The server fetched the script - psql is running. ' +
+                                             'The verdict appears here when it posts its hashes back.');
+                            return;
+                        }
+                        if (waited > RECHECK_STOP_MS) {
+                            stopRecheckPoll();
+                            setRecheckStatus('Not watching any more. Run the line when ready - the result ' +
+                                             'still records itself, and shows on the Audit Log and on Verify & Replay.');
+                            return;
+                        }
+                        if (waited > RECHECK_QUIET_MS) {
+                            setRecheckStatus('Nothing has reached this page yet. That is normal if you have not ' +
+                                             'run the line - but if the server cannot reach this address (no route, ' +
+                                             'a proxy in the way, no curl), use "Other ways to run it" below.',
+                                             'statusWarn');
+                        }
+                    })
+                    .catch(function () { /* transient - the next tick tries again */ });
+            }, RECHECK_POLL_MS);
+        }
+        document.getElementById('recheckAboutBtn').addEventListener('click', function () {
+            var box = document.getElementById('recheckAboutBox');
+            box.hidden = !box.hidden;
+        });
+        document.getElementById('feedShapesAboutBtn').addEventListener('click', function () {
+            var box = document.getElementById('feedShapesAboutBox');
+            box.hidden = !box.hidden;
+        });
+        // The map's outlines follow the box at once, so what is drawn is
+        // what the export will hold.
+        document.getElementById('includeFeedShapes').addEventListener('change', scheduleTrailsRefresh);
+        document.getElementById('recheckBox').addEventListener('click', function (e) {
+            if (e.target.classList.contains('copyBtn')) {
+                copyToClipboard(e.target.getAttribute('data-copy'), e.target);
+            }
+        });
+
+        function runExports(jobs) {
+            var resultBox = document.getElementById('exportResult');
+            document.getElementById('recheckBox').hidden = true;
+            var blocks = jobs.map(function (j) { return esc('Waiting: ' + j.label); });
+            // innerHTML, not textContent: the DOWNLOADED block above embeds a
+            // copy button. Everything else going into `blocks` is run through
+            // esc() first - .resultBox's white-space:pre-wrap already turns
+            // plain \n into line breaks, HTML or not, so no <br> conversion
+            // is needed here.
+            function render() { resultBox.innerHTML = blocks.join('\n\n'); }
+            render();
+            setBusy(true);
+
+            var chain = Promise.resolve();
+            jobs.forEach(function (job, idx) {
+                chain = chain.then(function () {
+                    return runOneExport(job.endpoint, job.label, job.payload, function (text) {
+                        blocks[idx] = text;
+                        render();
+                    });
+                });
+            });
+            chain.then(function () { setBusy(false); });
+        }
+
+        document.getElementById('generateBtn').addEventListener('click', function () {
+            var resultBox = document.getElementById('exportResult');
+
+            if (!bbox) {
+                resultBox.textContent = 'Draw a rectangle on the map first.';
+                return;
+            }
+            if (!document.getElementById('start').value || !document.getElementById('end').value) {
+                resultBox.textContent = 'Set a time window first.';
+                return;
+            }
+
+            var checkedFiles = Array.prototype.map.call(
+                document.querySelectorAll('.fileToggle.selected'), function (b) { return b.dataset.filename; }
+            );
+            if (!checkedFiles.length) {
+                resultBox.textContent = 'Select at least one file to export.';
+                return;
+            }
+
+            var wantsKmz = checkedFiles.indexOf('locations.kmz') !== -1;
+            var packageFiles = checkedFiles.filter(function (f) { return f !== 'locations.kmz'; });
+            // The package bundles its own locations.kmz automatically
+            // whenever cot.csv is part of it (see exports.build_package() -
+            // that's what actually drives the bundling, not this checkbox).
+            // A standalone kmz download on top of that would just be the
+            // same content twice, so it only fires when the package either
+            // isn't being built at all, or is being built WITHOUT cot.csv
+            // (so nothing else would produce a kmz at all otherwise).
+            var packageIncludesCot = packageFiles.indexOf('cot.csv') !== -1;
+            var wantsStandaloneKmz = wantsKmz && !packageIncludesCot;
+
+            // Both required. Case / Incident names the matter; Exported For
+            // is who this is being run FOR, not who is running it - the
+            // logged-in account is already recorded server-side from the
+            // session (see app.py's identify()), and an admin running
+            // exports on other people's behalf is the normal case here.
+            // The values stay in the fields after the export so a series of
+            // exports for one case does not mean retyping them.
+            var caseField = document.getElementById('caseId');
+            var forField = document.getElementById('exportedFor');
+            var caseId = caseField.value.trim();
+            var forWhom = forField.value.trim();
+            caseField.classList.toggle('missing', !caseId);
+            forField.classList.toggle('missing', !forWhom);
+            if (!caseId || !forWhom) {
+                resultBox.textContent = !caseId
+                    ? 'Enter the Case / Incident this export is for.'
+                    : 'Enter who this export is for (Exported For).';
+                (!caseId ? caseField : forField).focus();
+                return;
+            }
+
+            var channels = currentChannelSelection();
+
+            var jobs = [];
+            if (wantsStandaloneKmz) {
+                jobs.push({
+                    endpoint: '/api/locations',
+                    label: 'locations package (KMZ)',
+                    payload: buildPayload(caseId, forWhom, channels, {})
+                });
+            }
+            if (packageFiles.length) {
+                jobs.push({
+                    endpoint: '/api/package',
+                    label: 'evidence package (zip)',
+                    // include_kmz reflects the KMZ tile itself: the package
+                    // always bundles a KMZ when cot.csv is in it, UNLESS the
+                    // operator deselected that tile - in which case the zip
+                    // genuinely must not contain one, or the checklist lies.
+                    payload: buildPayload(caseId, forWhom, channels, { included: packageFiles, include_kmz: wantsKmz, include_feed_shapes: includeFeedShapes() })
+                });
+            }
+            runExports(jobs);
+        });
+    </script>
+</body>
+</html>

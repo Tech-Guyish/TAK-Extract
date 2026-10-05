@@ -1,0 +1,15 @@
+# Development-only tools. NOT installed by setup.sh, the Dockerfile, or any
+# deployment - keep those on requirements.txt alone.
+#
+# playwright: a headless Chromium driven from Python, used to screenshot and
+# exercise the app's pages against a local dev server during development,
+# and by tests/test_browser.py (which skips itself when this is not installed).
+# It downloads its own isolated browser (~700 MB, into %LOCALAPPDATA%\
+# ms-playwright) with a blank profile - it never touches the developer's own
+# browser or its data. Install with:
+#   venv/Scripts/pip install -r requirements-dev.txt
+#   venv/Scripts/playwright install chromium
+# Remove with:
+#   venv/Scripts/playwright uninstall
+#   venv/Scripts/pip uninstall playwright
+playwright==1.62.0

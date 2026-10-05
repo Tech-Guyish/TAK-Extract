@@ -1,0 +1,74 @@
+name: Dead code and complexity
+
+# The third standing check, beside pip-audit (dependency vulnerabilities) and
+# CodeQL (static security analysis). Those two ask whether the code is unsafe;
+# this one asks whether it is still all doing something.
+#
+# Three steps, and deliberately only two of them can fail the build:
+#
+#   1. pyflakes rules (ruff's F)  - unused imports, unused local variables,
+#      unreachable code, redefinitions, f-strings with nothing to interpolate.
+#      These are facts, not opinions: every one of them is code that cannot
+#      affect behaviour. Hard failure.
+#
+#   2. vulture - functions, classes and attributes nothing references. Needs
+#      help to be useful: Flask registers its 43 route handlers through
+#      @app.route, which vulture cannot see, and a handful of attributes are
+#      written here and read by the standard library. The decorators are named
+#      below and the attributes live in .github/vulture-whitelist.py, with the
+#      rule that a name is only parked there when it is genuinely a false
+#      positive. Hard failure.
+#
+#   3. Complexity - functions with too many branches or statements. REPORTED,
+#      never failing. The dozen functions this currently names (build_package,
+#      build_readme, export_package, dbcheck's run and render_text, and so on)
+#      are long because the job is long, and splitting them to satisfy a
+#      threshold would be churn dressed as cleanup. The point of printing them
+#      is that the list cannot grow without somebody seeing it.
+#
+# ERA (commented-out code) is deliberately NOT enabled: it reads prose in
+# comments as code. It flagged a sentence in guide_page's comment that mentions
+# a URL, which is exactly the kind of false positive that teaches people to
+# ignore a check.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  # The modules that ship. tests/ is linted for pyflakes rules too (step 1),
+  # but not swept by vulture: a test helper that nothing calls yet is a
+  # different conversation from a shipped function nothing calls.
+  SHIPPED: app.py exports.py dbcheck.py kmz.py shapes.py tls.py
+
+jobs:
+  dead-code:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the analysers
+        run: pip install ruff vulture
+
+      - name: Unused imports, variables and unreachable code
+        run: |
+          ruff check --select F --output-format=concise \
+            $SHIPPED gunicorn.conf.py tests/
+
+      - name: Functions and attributes nothing references
+        run: |
+          vulture $SHIPPED .github/vulture-whitelist.py \
+            --min-confidence 60 \
+            --ignore-decorators "@app.route,@app.errorhandler,@app.before_request,@app.after_request,@app.context_processor,@app.template_filter"
+
+      - name: Complexity (reported, does not fail the build)
+        if: always()
+        run: |
+          ruff check --select C901,PLR0912,PLR0915 --output-format=concise \
+            $SHIPPED || true

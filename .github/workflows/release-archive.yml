@@ -1,0 +1,139 @@
+name: Release archive and hash
+
+# Attaches a source archive to each published release and records its SHA-256
+# in the release notes.
+#
+# WHY NOT just hash the "Source code (zip)" / "Source code (tar.gz)" links
+# GitHub puts on every release: those are generated on demand and their
+# checksums are NOT guaranteed stable. On 2023-01-30 a git upgrade changed the
+# compression and every one of those archives got a new checksum overnight -
+# identical contents, different hash - which broke anyone who had recorded one.
+# GitHub rolled the change back but kept the policy, and their own guidance is
+# that anything needing a stable checksum should be uploaded as a release
+# asset, because uploaded assets do not change. So this builds its own.
+#
+# Determinism, and its limit, stated honestly:
+#   - `git archive` writes each entry with the tag's own commit time, so for a
+#     given tag the tar is the same every run.
+#   - `gzip -n` leaves out the timestamp and original filename gzip can embed.
+#     Measured, not assumed: because gzip here reads from a PIPE it has no
+#     filename or mtime to record and writes that header field as zero with or
+#     without the flag, so -n changes nothing today. It is kept because the
+#     guarantee stops holding the moment someone compresses a file on disk
+#     instead, and that is a one-character change away.
+#   - What this does NOT promise is that a DIFFERENT git version produces the
+#     same bytes - that is exactly what broke GitHub's own archives. The hash
+#     in the notes is the hash of the file attached here, and the notes say so
+#     rather than claiming it is the hash of "the source".
+#
+# The tree hash published alongside it has no such caveat: it is git's own
+# content address for the tag's tree, reproducible by anyone with a clone and
+# independent of any archive format.
+#
+# Runs on `release: published`, so it fires after `gh release create` rather
+# than racing it on the tag push.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to (re)build the archive for"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Work out which tag
+        id: tag
+        env:
+          # Through env, never interpolated straight into the script. A ${{ }}
+          # expression is substituted before bash ever sees the line, so a tag
+          # name carrying a newline could append its own lines to $GITHUB_OUTPUT
+          # and a name carrying shell metacharacters could run them. Only someone
+          # with write access can publish a release here, so this is a narrow
+          # door - but it is one, and it costs nothing to shut.
+          RAW_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          case "$RAW_TAG" in
+            ""|*[!A-Za-z0-9._-]*)
+              echo "Refusing a tag name outside A-Za-z0-9._- : $RAW_TAG" >&2
+              exit 1 ;;
+          esac
+          # Safe as a plain echo now: the case above has already rejected
+          # anything containing a newline or a shell metacharacter.
+          echo "name=$RAW_TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.name }}
+          fetch-depth: 0
+
+      - name: Build the archive, deterministically
+        id: build
+        env:
+          TAG: ${{ steps.tag.outputs.name }}
+        run: |
+          set -euo pipefail
+          name="TAK-Extract-${TAG}.tar.gz"
+          # -n: no timestamp or original filename in the gzip header. Reading
+          # from a pipe there is none to embed anyway - see the note at the top.
+          git archive --format=tar --prefix="TAK-Extract-${TAG}/" "$TAG" | gzip -n > "$name"
+          echo "name=$name"                                   >> "$GITHUB_OUTPUT"
+          echo "sha=$(sha256sum "$name" | cut -d' ' -f1)"     >> "$GITHUB_OUTPUT"
+          echo "tree=$(git rev-parse "${TAG}^{tree}")"        >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-list -n1 "$TAG")"            >> "$GITHUB_OUTPUT"
+
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.name }}
+          ARCHIVE: ${{ steps.build.outputs.name }}
+        run: gh release upload "$TAG" "$ARCHIVE" --clobber
+
+      - name: Record the hashes in the release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.name }}
+          ARCHIVE: ${{ steps.build.outputs.name }}
+          SHA: ${{ steps.build.outputs.sha }}
+          TREE: ${{ steps.build.outputs.tree }}
+          COMMIT: ${{ steps.build.outputs.commit }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --json body --jq .body > notes.md
+          # Re-running must not append a second copy.
+          if grep -q '<!-- release-hashes -->' notes.md; then
+            echo "Hashes already recorded on $TAG; leaving the notes alone."
+            exit 0
+          fi
+          cat >> notes.md <<EOF
+
+          <!-- release-hashes -->
+          ---
+
+          **Verifying this release**
+
+          \`$ARCHIVE\` is attached to this release. Its SHA-256:
+
+          \`\`\`
+          $SHA
+          \`\`\`
+
+          Check it with \`sha256sum $ARCHIVE\`. That compares the file you
+          downloaded against the file this workflow attached, and nothing more.
+          Do not use the "Source code" links above for this - GitHub generates
+          those on demand and does not guarantee their checksums stay the same.
+
+          This tag's commit is \`$COMMIT\` and its tree is \`$TREE\`. The tree
+          is git's own content address for the files at this tag, so anyone
+          with a clone can reproduce it with
+          \`git rev-parse $TAG^{tree}\` without downloading anything.
+          EOF
+          gh release edit "$TAG" --notes-file notes.md

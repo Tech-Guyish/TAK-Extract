@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<!-- data-theme reflects the logged-in account's own preference
+     (set on /admin's Appearance panel), rendered server-side - see
+     index.html for the full rationale, and app.py's get_theme(). -->
+<html{% if theme == 'dark' %} data-theme="dark"{% elif theme == 'light' %} data-theme="light"{% endif %}>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TAK-Extract — Log in</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+
+        :root {
+            color-scheme: light dark;
+            --bg: #ffffff;
+            --text: #1a1a1a;
+            --text-muted: #666666;
+            --panel-bg: #f9f9f9;
+            --panel-border: #dddddd;
+            --box-bg: #ffffff;
+            --box-border: #cccccc;
+            --btn-bg: #dcdcdc;
+            --btn-border: #a8a8a8;
+            --accent: #2a6fdb;
+            --accent-text: #ffffff;
+            --bad: #cc0000;
+            --bad-bg: #fbeaea;
+
+            --space-1: 4px;
+            --space-2: 8px;
+            --space-3: 12px;
+            --space-4: 16px;
+            --space-5: 20px;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #1a1a1a; --text: #e8e8e8; --text-muted: #aaaaaa;
+                --panel-bg: #262626; --panel-border: #444444;
+                --box-bg: #202020; --box-border: #555555;
+                --btn-bg: #454545; --btn-border: #808080;
+                --accent: #4a8eea; --accent-text: #ffffff;
+                --bad: #ff8a8a; --bad-bg: #3a2323;
+            }
+        }
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --bg: #1a1a1a; --text: #e8e8e8; --text-muted: #aaaaaa;
+            --panel-bg: #262626; --panel-border: #444444;
+            --box-bg: #202020; --box-border: #555555;
+            --btn-bg: #454545; --btn-border: #808080;
+            --accent: #4a8eea; --accent-text: #ffffff;
+            --bad: #ff8a8a; --bad-bg: #3a2323;
+        }
+        :root[data-theme="light"] {
+            color-scheme: light;
+            --bg: #ffffff; --text: #1a1a1a; --text-muted: #666666;
+            --panel-bg: #f9f9f9; --panel-border: #dddddd;
+            --box-bg: #ffffff; --box-border: #cccccc;
+            --btn-bg: #dcdcdc; --btn-border: #a8a8a8;
+            --accent: #2a6fdb; --accent-text: #ffffff;
+            --bad: #cc0000; --bad-bg: #fbeaea;
+        }
+
+        body {
+            font-family: sans-serif; line-height: 1.5; background: var(--bg); color: var(--text);
+            min-height: 100vh; margin: 0; display: flex; align-items: center; justify-content: center;
+        }
+        .loginBox {
+            width: 100%; max-width: 320px; padding: var(--space-5); margin: var(--space-4);
+            border: 1px solid var(--panel-border); background: var(--panel-bg); border-radius: 6px;
+        }
+        .loginBox h1 { font-size: 18px; margin: 0 0 var(--space-4) 0; text-align: center; }
+        label { display: block; font-size: 13px; margin-bottom: var(--space-1); }
+        input {
+            width: 100%; padding: var(--space-2); margin-bottom: var(--space-3);
+            background: var(--box-bg); color: var(--text); border: 1px solid var(--box-border);
+            border-radius: 3px; font-size: 14px;
+        }
+        button {
+            width: 100%; padding: var(--space-2) var(--space-4); font-size: 14px;
+            background: var(--accent); color: var(--accent-text); border: 1px solid var(--accent);
+            border-radius: 3px; cursor: pointer;
+        }
+        .error {
+            font-size: 13px; margin-bottom: var(--space-3); padding: var(--space-2) var(--space-3);
+            border: 1px solid var(--bad); background: var(--bad-bg); color: var(--text); border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <form class="loginBox" method="post" action="/login">
+        <h1>TAK-Extract</h1>
+        {% if error %}<div class="error">{{ error }}</div>{% endif %}
+        <input type="hidden" name="next" value="{{ next or '' }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" autofocus required>
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+        <button type="submit">Log in</button>
+    </form>
+</body>
+</html>

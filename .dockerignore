@@ -1,0 +1,31 @@
+# Secrets and mutable state - never baked into the image. Real values come
+# in at runtime via docker-compose's env_file/volumes instead.
+.env
+.env.*
+!.env.example
+audit.sqlite
+auth.log
+data/
+
+# Dev/tooling cruft that has no place in the image. NOT .git/ - the
+# System page's "Check for updates" feature (/api/admin/check-updates in
+# app.py) needs it, to compare this build's own commit against its
+# GitHub remote. See the Dockerfile's own note by its COPY . . step.
+venv/
+__pycache__/
+*.pyc
+.gitignore
+.claude/
+
+# Notes and dev-only tooling - useful to a human reading the repo, not
+# needed by the running app. tests/ as a whole: nothing in the image ever
+# runs a test. docs/ is NOT excluded - the User Guide's screenshots live
+# in docs/guide-images and the app serves them (see guide_image in app.py).
+NOTES.md
+tests/
+requirements-dev.txt
+
+# Bare-metal-only tooling - meaningless inside the container, which uses
+# docker-compose.yml's own restart:/healthcheck: instead of either of these.
+setup.sh
+tak-extract.service

@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<!-- data-theme reflects the logged-in account's own preference (set on
+     /admin's Appearance panel), rendered server-side - same mechanism as
+     every other page; see index.html for the rationale and app.py's
+     get_theme(). This page is self-contained (its own small stylesheet)
+     because it opens in its own tab as a reference, separate from the app
+     chrome. -->
+<html{% if theme == 'dark' %} data-theme="dark"{% elif theme == 'light' %} data-theme="light"{% endif %}>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TAK-Extract - User Guide</title>
+    <style>
+        /* Same tokens, header, nav and panel treatment as the app's other
+           pages (see index.html for the rationale behind each), so the
+           guide reads as part of the tool rather than a separate document.
+           Kept self-contained because it opens in its own tab. */
+        *, *::before, *::after { box-sizing: border-box; }
+        :root {
+            color-scheme: light dark;
+            --bg: #ffffff; --text: #1a1a1a; --text-muted: #666666;
+            --panel-bg: #f9f9f9; --panel-border: #dddddd;
+            --box-bg: #ffffff; --box-border: #cccccc;
+            --btn-bg: #dcdcdc; --btn-border: #a8a8a8;
+            --accent: #2a6fdb; --accent-text: #ffffff;
+            --warn: #9a6b00; --warn-bg: #fff7e0; --ok: #009900;
+            --space-1: 4px; --space-2: 8px; --space-3: 12px;
+            --space-4: 16px; --space-5: 20px; --space-6: 24px;
+            --content-width: 1100px; --reading-width: 880px;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --bg: #1a1a1a; --text: #e8e8e8; --text-muted: #aaaaaa;
+                --panel-bg: #262626; --panel-border: #444444;
+                --box-bg: #202020; --box-border: #555555;
+                --btn-bg: #454545; --btn-border: #808080;
+                --accent: #4a8eea; --accent-text: #ffffff;
+                --warn: #e0b34d; --warn-bg: #2e2a1c; --ok: #4caf50;
+            }
+        }
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --bg: #1a1a1a; --text: #e8e8e8; --text-muted: #aaaaaa;
+            --panel-bg: #262626; --panel-border: #444444;
+            --box-bg: #202020; --box-border: #555555;
+            --btn-bg: #454545; --btn-border: #808080;
+            --accent: #4a8eea; --accent-text: #ffffff;
+            --warn: #e0b34d; --warn-bg: #2e2a1c; --ok: #4caf50;
+        }
+        :root[data-theme="light"] {
+            color-scheme: light;
+            --bg: #ffffff; --text: #1a1a1a; --text-muted: #666666;
+            --panel-bg: #f9f9f9; --panel-border: #dddddd;
+            --box-bg: #ffffff; --box-border: #cccccc;
+            --btn-bg: #dcdcdc; --btn-border: #a8a8a8;
+            --accent: #2a6fdb; --accent-text: #ffffff;
+            --warn: #9a6b00; --warn-bg: #fff7e0; --ok: #009900;
+        }
+
+        body { font-family: sans-serif; line-height: 1.5; margin: 0; background: var(--bg); color: var(--text); }
+
+        /* Header + nav: identical to the other pages. */
+        /* One bar across the window on every page. The nav is right-aligned
+           inside it, so it has to be the same box everywhere or the buttons
+           move from page to page - which they did, by 87px, because this
+           used to inherit each page's own content width. The content below
+           is centred by .pageBody rather than by <body>, so this can span
+           the full width without a 100vw trick (100vw is wider than the
+           viewport whenever there is a scrollbar). */
+        .pageHeader { display: flex; justify-content: space-between; align-items: center;
+                      flex-wrap: wrap; row-gap: var(--space-2); gap: var(--space-4);
+                      padding: var(--space-5) var(--space-4) var(--space-3); }
+        .pageBody { max-width: var(--content-width); margin: 0 auto;
+                    padding: 0 var(--space-4) var(--space-5); }
+        .pageHeader h1 { margin: 0; }
+        .headerActions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+        .whoami { font-size: 13px; color: var(--text-muted); }
+        .logoutForm { display: inline; margin: 0; }
+        /* margin: 0 matters - some pages' generic `button` rule carries a
+           margin-right, which widened this form and moved the nav with it. */
+        .logoutLink { font-size: 13px; color: var(--text); text-decoration: underline; cursor: pointer;
+                      background: none; border: 0; padding: 0; margin: 0; font-family: inherit; }
+        .siteNav { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+        .siteNav a, .siteNav .current {
+            display: inline-flex; align-items: center; justify-content: center;
+            height: 32px; padding: 0 var(--space-3); font-size: 13px; border-radius: 3px;
+            text-decoration: none; border: 1px solid var(--btn-border);
+        }
+        .siteNav a { background: var(--btn-bg); color: var(--text); }
+        .siteNav a:hover { background: var(--panel-bg); }
+        .siteNav .current { background: var(--accent); color: var(--accent-text);
+                            border-color: var(--accent); cursor: default; }
+
+        .lead { color: var(--text-muted); max-width: var(--reading-width); margin: var(--space-3) 0 0; }
+
+        /* Table of contents: the same button-links as the nav, one per section. */
+        .toc { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-4) 0 var(--space-2); }
+        .toc a { display: inline-flex; align-items: center; height: 32px; padding: 0 var(--space-3);
+                 font-size: 13px; border-radius: 3px; text-decoration: none;
+                 border: 1px solid var(--btn-border); background: var(--btn-bg); color: var(--text); }
+        .toc a:hover { background: var(--panel-bg); }
+
+        /* Each page's section: a heading row with a "back to top" link,
+           an intro, then one panel per step - the app's own .panel look. */
+        h2 { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3);
+             margin: var(--space-6) 0 var(--space-2); padding-top: var(--space-4);
+             border-top: 2px solid var(--panel-border); scroll-margin-top: var(--space-4); }
+        h2 .top { font-size: 12px; font-weight: normal; color: var(--text-muted); text-decoration: none; }
+        h2 .top:hover { text-decoration: underline; color: var(--text); }
+        h2 + p { max-width: var(--reading-width); }
+        h3 { margin: 0 0 var(--space-2); font-size: 16px; }
+        p, li { margin: 0 0 var(--space-3); }
+        ul { padding-left: var(--space-5); margin-top: 0; }
+        li:last-child, .step > :last-child { margin-bottom: 0; }
+        .step { margin-top: var(--space-4); padding: var(--space-3) var(--space-4);
+                border: 1px solid var(--panel-border); background: var(--panel-bg);
+                border-radius: 4px; }
+        .step p, .step li { max-width: var(--reading-width); }
+        .tip { color: var(--text-muted); font-size: 14px; }
+        .warn { color: var(--warn); }
+        p.warn { background: var(--warn-bg); border: 1px solid var(--warn);
+                 border-radius: 3px; padding: var(--space-2) var(--space-3); }
+        code { background: var(--box-bg); border: 1px solid var(--box-border);
+               border-radius: 3px; padding: 1px 4px; font-size: 13px; }
+        /* Commands to copy: one line each, scrolling sideways rather than
+           wrapping so they paste intact. */
+        .step pre { background: var(--box-bg); border: 1px solid var(--box-border); border-radius: 3px;
+                    padding: var(--space-2) var(--space-3); font-size: 13px; overflow-x: auto;
+                    max-width: var(--reading-width); }
+        .step ol { max-width: var(--reading-width); }
+
+        /* Screenshots: bordered like a panel, never wider than the column,
+           with a short caption. Generated from synthetic data - see
+           docs/guide-images/README.txt. */
+        figure.shot { margin: var(--space-3) 0 var(--space-2); }
+        figure.shot img { display: block; max-width: 100%; height: auto;
+                          border: 1px solid var(--box-border); border-radius: 4px;
+                          background: var(--box-bg); }
+        figure.shot figcaption { margin-top: var(--space-1); font-size: 12px; color: var(--text-muted); }
+        /* A narrower cap for small controls - but never wider than the
+           column, or a phone-width screen scrolls sideways. */
+        figure.shot.narrow img { max-width: min(520px, 100%); }
+        .badges { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+        .badges figure.shot { margin: var(--space-2) 0; }
+        .badges figure.shot img { max-width: 160px; border: none; background: transparent; }
+        .backlink { font-size: 13px; color: var(--text-muted); margin-top: var(--space-6); }
+
+        /* The reference grid: the app's own table treatment (see the Audit
+           page), scrolling sideways inside its box when narrow. Cells lead
+           with a glyph but always carry a word too, so nothing rests on
+           colour alone. */
+        .tableScroll { overflow-x: auto; margin-top: var(--space-3); }
+        .refTable { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 13px; }
+        .refTable th, .refTable td { border: 1px solid var(--panel-border); padding: var(--space-2) var(--space-3);
+                                     text-align: left; vertical-align: top; }
+        .refTable th { background: var(--panel-bg); }
+        .refTable thead th { position: sticky; top: 0; }
+        .refTable th.col { width: 19%; }
+        .refTable tr.group th { background: var(--box-bg); font-size: 12px; text-transform: uppercase;
+                                letter-spacing: 0.04em; color: var(--text-muted); padding-top: var(--space-3); }
+        .refTable td.c { white-space: nowrap; }
+        .refTable td.c small { display: block; white-space: normal; font-size: 11px; color: var(--text-muted);
+                               margin-top: 2px; }
+        .yes  { color: var(--ok, #009900); font-weight: bold; }
+        .part { color: var(--warn); font-weight: bold; }
+        .no   { color: var(--text-muted); }
+        .refKey { font-size: 12px; color: var(--text-muted); margin-top: var(--space-2); }
+    </style>
+</head>
+<body>
+    <div class="pageHeader">
+        <h1>TAK-Extract &mdash; User Guide</h1>
+        <div class="headerActions">
+            <nav class="siteNav">
+                {% if role == 'admin' %}
+                    <a href="/">Export</a><a href="/verify">Verify &amp; Replay</a>
+                    <a href="/audit">Audit Log</a><a href="/admin">System</a>
+                {% else %}
+                    <a href="/verify">Verify &amp; Replay</a>
+                {% endif %}
+                <span class="current">Guide</span>
+            </nav>
+            {# The same account block as every other page. Without it the nav
+               sat flush against the header's right edge while the other
+               pages' navs were pushed left by this, so the buttons jumped
+               whenever the Guide was open beside them. It also means the
+               Guide - which opens in its own tab - is no longer the one
+               page you cannot log out from. #}
+            {% if auth_mode == 'local' %}<span class="whoami">{{ username }}</span>
+            <form method="post" action="/logout" class="logoutForm"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="logoutLink">Log out</button></form>{% endif %}
+        </div>
+    </div>
+    <div class="pageBody">
+    <p class="lead" id="top">A page-by-page description of what each part of the tool does and the
+        order in which you would use it. The <strong>&#9432; About</strong> and info buttons beside
+        individual controls on each page describe those controls in more detail.</p>
+
+    <nav class="toc" aria-label="Sections">
+        <a href="#files">What each file contains</a>
+        {% if role == 'admin' %}<a href="#export">Export</a>{% endif %}
+        <a href="#verify">Verify &amp; Replay</a>
+        <a href="#evidence">Using an export as evidence</a>
+        {% if role == 'admin' %}<a href="#audit">Audit Log</a><a href="#system">System</a>{% endif %}
+    </nav>
+
+
+    <!-- ============================ FILES ============================= -->
+    <h2 id="files"><span>What each file contains</span><a class="top" href="#top">&uarr; top</a></h2>
+    <p>Three files can put TAK positions on a map. TAK Server can export its own KMZ; this tool
+        produces a locations KMZ (the <strong>Locations Package Only</strong> preset) and a full
+        evidence package (the <strong>Full Evidence Package</strong> preset, which bundles the
+        KMZ inside it). They are not equivalent. The grid shows what each one actually carries,
+        so it is clear which to use when the question is not just "where were they?" but "what
+        else was going on, who produced this, and can it be checked later?"</p>
+    <div class="tableScroll">
+        <table class="refTable">
+            <thead><tr>
+                <th>Feature</th>
+                <th class="col">TAK Server export (.kmz)</th>
+                <th class="col">TAK-Extract locations (.kmz)</th>
+                <th class="col">TAK-Extract evidence package (.zip)</th>
+            </tr></thead>
+            <tbody>
+            <tr class="group"><th colspan="4">Positions and movement</th></tr>
+            <tr><td>Device tracks with a timestamp on every report</td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Track broken where a device went quiet, rather than drawn straight across the gap</td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Speed, heading and accuracy on each report</td><td class="c"><span class="part">&#9684; Partial</span><small>speed / accuracy on tracks when its export includes extended data</small></td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Fix source flagged: GPS measurement, accuracy unknown, or placed by hand</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Channels each report was delivered on</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Device model, TAK platform and version, battery</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Every position as a spreadsheet row, with the complete raw CoT record</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span><small>cot.csv, 30+ columns</small></td></tr>
+            <tr class="group"><th colspan="4">Drawn shapes &mdash; fire lines, perimeters, circles</th></tr>
+            <tr><td>Shapes as drawn, with their colour</td><td class="c"><span class="yes">&#10003; Yes</span><small>as they stood at export time</small></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span><small>shapes.csv + KMZ; shapes from automated feeds only if chosen</small></td></tr>
+            <tr><td>Every version of a shape, replayable as it was redrawn</td><td class="c"><span class="part">&#9684; Partial</span><small>lines only, in its timeseries mode; polygons and circles current state only</small></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Who drew or edited each version</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Deletions, with the time the server recorded them</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>A shape included when any part of it touches the area, not only its anchor point</td><td class="c"><span class="no">n/a</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span><small>rule stated in the file</small></td></tr>
+            <tr class="group"><th colspan="4">What was happening around the movement</th></tr>
+            <tr><td>Chat messages</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Missions: definitions, decoded edit history, subscriptions, contents</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Connect / disconnect events</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Shared files, attachments, video feed references, data feeds, federation records</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span><small>video credentials redacted</small></td></tr>
+            <tr class="group"><th colspan="4">Provenance and integrity</th></tr>
+            <tr><td>Who exported it, when, and who it was requested for &mdash; written inside the file</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span><small>parameters.txt</small></td><td class="c"><span class="yes">&#10003; Yes</span><small>README and KMZ</small></td></tr>
+            <tr><td>What was asked for &mdash; time window, area, channel filter &mdash; stated in the file</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Manifest: every device active in the window, and why any was left out</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span><small>manifest.csv</small></td></tr>
+            <tr><td>Plain-language README: every file explained, sentinel values, data-quality summary, limits</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>SHA-256 recorded in an audit log at export time</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Every query it ran, with its values, as a script the TAK Server administrator can re-run</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span><small>queries.sql</small></td></tr>
+            <tr><td>Every column of the server's own rows for the package's records, as stored, unmodified</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span><small>cot_router-raw.csv</small></td></tr>
+            <tr><td>Read in one snapshot, read-only, with the account's privileges, clocks and code commit stated by the database</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span><small>README</small></td></tr>
+            <tr><td>One page on how to check the package, travelling with it</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span><small>VERIFY.txt</small></td></tr>
+            <tr><td>A certification with the export's facts, every file's hash and the re-check's results already entered</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span><small>produced from Verify &amp; Replay</small></td></tr>
+            <tr><td>Which database the export was read from, recorded with it</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span><small>README + audit log</small></td></tr>
+            <tr><td>Re-checkable by the administrator on the server, one command, with one file that matches the package by hash</td><td class="c"><span class="no">n/a</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span><small>queries.sql + cot_router-raw.csv</small></td></tr>
+            <tr><td>Per-file hashes inside the package</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span><small>SHA256SUMS.txt</small></td></tr>
+            <tr><td>Every export logged: who ran it, for whom, when, outcome &mdash; failures included</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Producing tool and version stated in the file</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr class="group"><th colspan="4">Where it can be used</th></tr>
+            <tr><td>Google Earth, with the time slider</td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span><small>bundled locations.kmz</small></td></tr>
+            <tr><td>Replay in TAK-Extract</td><td class="c"><span class="yes">&#10003; Yes</span><small>generic reader</small></td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Click a point in TAK-Extract for full record detail</td><td class="c"><span class="part">&#9684; Partial</span><small>type, time, position, remarks &mdash; what the file carries</small></td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Shapes replay over time in TAK-Extract</td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="no">&mdash; No</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            <tr><td>Hash checked against the audit log on the Verify &amp; Replay page</td><td class="c"><span class="no">&mdash; No</span><small>no audit-log entry to check against</small></td><td class="c"><span class="yes">&#10003; Yes</span></td><td class="c"><span class="yes">&#10003; Yes</span></td></tr>
+            </tbody>
+        </table>
+    </div>
+    <p class="refKey"><span class="yes">&#10003; Yes</span> &nbsp; <span class="part">&#9684; Partial</span>
+        &mdash; present with a limitation, noted in the cell &nbsp; <span class="no">&mdash; No</span>.
+        The TAK Server column describes its KML export as implemented in the server's published
+        source; what a given export includes depends on the server version and the options chosen
+        when exporting.</p>
+
+    <!-- ============================ EXPORT ============================ -->
+    <h2 id="export"><span>Export</span><a class="top" href="#top">&uarr; top</a></h2>
+    <p>The Export page retrieves location records from the TAK Server and packages them into a
+        file. You set the area and time window, review how many records match, choose which files
+        to include, and generate the export. No file is produced until you select
+        <strong>Generate Export</strong>.</p>
+
+    <div class="step">
+        <h3>1. Draw the area</h3>
+        <p>Draw a rectangle on the map to set the geographic area. Drawing a new rectangle
+            replaces the old one; the trash control clears it. The <strong>Selected area</strong>
+            panel underneath shows the exact coordinates you've chosen.</p>
+        <figure class="shot"><img src="/guide/img/export-map.png" alt="A rectangle drawn on the map with the draw control at the top left." loading="lazy"><figcaption>A rectangle drawn on the map with the draw control at the top left.</figcaption></figure>
+        <p><strong>Movement trails and shape outlines.</strong> Faint gray dashed lines on the
+            map show where devices moved during the selected time window, and darker dashed
+            outlines show drawn shapes — fire lines, perimeters, circles — as they last stood in
+            that window. Both cover the whole visible map rather than only the rectangle you have
+            drawn, so a device traveling just outside the selection, or a shape whose anchor point
+            falls outside it, is still visible and the rectangle can be adjusted before you
+            export.</p>
+        <p><strong>Shapes from automated feeds.</strong> Some shapes on a server were not drawn
+            by anyone: software pushed them &mdash; an imported map layer of neighbourhood or water
+            boundaries, for example &mdash; and the record says so, because the pushing software
+            writes an element into it (<code>__nodered</code>, from Node-RED's TAK node) that a
+            shape drawn at a map does not carry. Those shapes are left out of the map's outlines,
+            <code>shapes.csv</code> and the KMZ unless you tick <strong>Include shapes from
+            automated feeds</strong> in the <strong>Drawn shapes</strong> panel beside the
+            selected area. Either way the package README states
+            what was found and what was done with it, and <code>manifest.csv</code> names each
+            such shape with that reason; <code>cot.csv</code> and the raw file keep their rows.</p>
+        <p class="tip">Trails and outlines appear once the map is zoomed in far enough; at wider
+            views they are not drawn. They redraw as you pan, zoom, or change the time window. Only
+            devices that moved are shown, and a trail breaks where that device stopped reporting.
+            Neither carries identity — nothing is labelled, filled with its original colour, or
+            clickable — and displaying them is not recorded in the audit log.</p>
+        <p class="tip warn">⚠ The search box in the map's corner sends whatever you type to
+            OpenStreetMap's public Nominatim service. It is the only control on this page that
+            contacts an outside service, so treat anything entered there as leaving your network.
+            Drawing on the map sends nothing.</p>
+    </div>
+
+    <div class="step">
+        <h3>2. Set the time window</h3>
+        <p>Set a <strong>Start</strong> and <strong>End</strong> date and time. The note beside
+            the panel states which timezone the times are interpreted in. The window recorded here
+            is what the Verify &amp; Replay page later checks a file's actual data against.</p>
+        <figure class="shot narrow"><img src="/guide/img/export-time.png" alt="The time window panel, with the timezone note beside the heading." loading="lazy"><figcaption>The time window panel, with the timezone note beside the heading.</figcaption></figure>
+    </div>
+
+    <div class="step">
+        <h3>3. Check the counts before exporting</h3>
+        <p>Once you have an area and a time window, the counts box fills in: total position
+            records, how many distinct IDs they came from, and a breakdown by kind —
+            <strong>Personnel</strong>, <strong>Vehicles/equip</strong>,
+            <strong>Infrastructure</strong>, and <strong>Map objects</strong>.</p>
+        <p class="tip">These are counts only; no names or positions are retrieved. Use them to
+            adjust the area or time window before generating an export that turns out larger or
+            smaller than intended.</p>
+    </div>
+
+    <div class="step">
+        <h3>4. Channels (optional)</h3>
+        <p>TAK separates traffic into channels so one group only sees what's meant for them. This
+            panel lists the channels actually seen in your chosen area and window, and lets you
+            narrow the export to specific ones. <strong>Select all / none</strong> toggles them
+            together.</p>
+        <p class="tip">Not every file can be channel-filtered — each file's own
+            <strong>ⓘ About</strong> says whether it can. Anything excluded by a channel filter is
+            recorded in the export's manifest, so a filtered export still accounts for what it
+            left out.</p>
+    </div>
+
+    <div class="step">
+        <h3>5. Choose the files</h3>
+        <p>Start with a preset — <strong>Locations Package Only</strong> for just the map/location
+            data, or <strong>Full Evidence Package</strong> for the complete set — then adjust
+            individually. <strong>Select none</strong> clears everything.</p>
+        <ul>
+            <li><strong>ⓘ About</strong> on each file says what it contains, what narrows it
+                (time, area, channel — they differ per file), and flags anything especially
+                sensitive.</li>
+            <li><strong>Preview</strong> shows the column headers and first five rows that file
+                would contain, using the same query the export itself runs. Because a preview
+                displays real record content, it is recorded in the audit log. A file that is
+                built from parsed geometry rather than a direct query (drawn shapes) has no row
+                preview; its About note describes it instead.</li>
+        </ul>
+        <figure class="shot"><img src="/guide/img/export-files.png" alt="The file list with a preset row above it and one file's About note open." loading="lazy"><figcaption>The file list with a preset row above it and one file's About note open.</figcaption></figure>
+    </div>
+
+    <div class="step">
+        <h3>6. Generate</h3>
+        <p>Fill in <strong>Case / Incident</strong> and <strong>Exported For</strong>, then
+            select <strong>Generate Export</strong>. Both fields are required; the button tells
+            you which one is missing. The file builds and downloads, and the account running the
+            export and both of those values go into the audit log alongside what you requested.
+            The two values stay in place afterwards, so a series of exports for the same case does
+            not mean retyping them.</p>
+        <figure class="shot"><img src="/guide/img/export-generate.png" alt="The Case / Incident and Exported For fields with the Generate Export button to their right." loading="lazy"><figcaption>Case / Incident and Exported For, with Generate Export to the right.</figcaption></figure>
+        <p class="tip">You are not asked for your own name. The account you signed in with is
+            recorded automatically and cannot be overwritten by anything entered on the page. The
+            <strong>Exported For</strong> field identifies the person the export is being run on
+            behalf of, which is the usual case when an administrator retrieves records for someone
+            else. It appears in the Audit Log's <strong>For</strong> column and inside the
+            package.</p>
+        <p>The result box shows the file's <strong>SHA-256</strong> hash with a copy button. It was
+            calculated when the file was built and written to the audit log before the download
+            began; the Verify &amp; Replay page looks a file up by it. Note it with the case, and
+            keep the downloaded file as received &mdash; work on copies, since re-saving a CSV in
+            a spreadsheet changes it. A re-run is a new file with its own hash.</p>
+        <p class="tip">Every export is recorded in the audit log whether it succeeds or fails.
+            The entry covers the request itself &mdash; account, time, window and area &mdash; and
+            contains no location data.</p>
+    </div>
+
+    <div class="step">
+        <h3>Optional: the re-check on the TAK Server</h3>
+        <p class="tip">This one is <strong>not a step in exporting</strong>. A package and its
+            entry in the audit log stand on their own; a package without a re-check is not
+            deficient. The re-check is corroboration over and above what is required, and it is
+            worth having when it is easy to get &mdash; which is now, while the server still
+            holds the rows.</p>
+        <p>Everything in the package was read from the TAK Server database by this tool. The
+            re-check is the same statements run again on the server by the administrator with
+            psql &mdash; files this tool never touched. Once a package has downloaded, the page
+            shows <strong>one line</strong> to paste on the server, with the case name and this
+            page's address already in it.</p>
+        <figure class="shot"><img src="/guide/img/export-recheck.png" alt="The re-check block under the result: one command with a copy button, the address field, the self-signed box, and two steps." loading="lazy"><figcaption>The re-check, shown once a package has downloaded.</figcaption></figure>
+        <ol>
+            <li>SSH to the TAK Server, paste the line, press Enter, enter your sudo password. The
+                line fetches the package's <code>queries.sql</code> from TAK-Extract (the same bytes
+                as in the zip &mdash; its hash is in <code>SHA256SUMS.txt</code>), runs it with psql in
+                one read-only snapshot, hashes every result, tars the folder, and posts
+                <em>only the list of hashes</em> back to TAK-Extract, which records it in the audit
+                log and answers with a <code>RECHECK-INFO.txt</code> saved beside the files. No
+                location data travels either way. Every statement is a SELECT.</li>
+            <li>The last line printed is the verdict: <code>recorded: &hellip; cot_router-raw.csv
+                matches the package: yes</code>. That is the hand check done for you &mdash; the
+                <code>&lt;case&gt;-recheck-cot_router-raw.csv</code> line in the server's hash file
+                against the <code>&lt;case&gt;-cot_router-raw.csv</code> line in the package's
+                <code>SHA256SUMS.txt</code>. The tool writes that file the way psql writes CSV,
+                with every value in the server's own text form, so the same rows give the same
+                bytes; a match means the file the server wrote and the one in the package have the
+                same hash. The other re-check files are <em>recorded, not compared</em> by hash &mdash;
+                they can be compared by content, and the package README says under
+                <strong>WHAT THE RE-CHECK COMPARES</strong> why hashing them would report
+                differences that are not errors. Both hash files are in the case
+                folder for anyone to compare by eye.</li>
+            <li><strong>If the moment passes.</strong> The line above is shown once, on this
+                page, and the token in it lasts 48 hours. It is no longer the only way in: open the
+                export's entry in the <strong>Audit Log</strong> and use <em>Re-check this
+                extraction</em>, and a fresh line is issued for that package whenever you need it.
+                The script is the one the package was built with, kept here since the export and
+                checked against the hash the log recorded for it before anything is offered.</li>
+            <li>The files stay on the server, in
+                <code>/var/lib/takextract/recheck/&lt;case&gt;/&lt;date-time&gt;-&lt;package&gt;/</code>: the script
+                that ran, every result, the snapshot file, the hash file, a <code>.tgz</code> of all
+                of them, and <code>RECHECK-INFO.txt</code>. A second run goes in its own folder, and so does the
+                re-check of a second export under the same case &mdash; the folder carries the time to
+                the second and the first eight characters of that package's SHA-256, so several
+                exports for one case (different areas, different channels) never write over each
+                other and it is plain which export each folder re-checks. Nothing needs bringing back; WinSCP can copy the folder off for a
+                production, or the raw file for a row-by-row diagnosis if the verdict was
+                <strong>NO</strong>.</li>
+        </ol>
+        <p class="tip"><strong>First time on a server:</strong> the folder and its permissions are
+            created once, by <code>connect-database.sh</code> or by the one-time line on the System
+            page (Re-check folder). <strong>Self-signed certificate:</strong> if this page's address
+            shows a certificate warning, tick the box so the server's <code>curl</code> accepts it
+            too. <strong>Other ways to run it:</strong> the button under the command opens a plain psql
+            form for any machine that can reach the database &mdash; a server that cannot reach
+            TAK-Extract, or psql on your own PC. Nothing is posted back that way, so the verdict is
+            yours to check by hand; the README in the package gives those steps too.</p>
+        <p>You do not have to decide which method to use. Paste the line and watch: whether the TAK
+            Server can reach this page is not something the page can test &mdash; that connection
+            runs the other way &mdash; but it sees the server fetch the script, and it sees the
+            hashes arrive. The line under the command follows along: <em>waiting for the server to
+            fetch the script</em>, then <em>the server fetched the script &mdash; psql is
+            running</em>, then the verdict in green or red. If nothing reaches it, it says so after
+            a minute or two and points at the other methods, rather than leaving you to guess.</p>
+        <p class="warn">Do this at export time. The server deletes records after its retention
+            period; after that no re-run is possible by anyone, and the package is the only
+            copy.</p>
+    </div>
+
+    <!-- ============================ VERIFY ============================ -->
+    <h2 id="verify"><span>Verify &amp; Replay</span><a class="top" href="#top">&uarr; top</a></h2>
+    <p>This page has two functions, both performed on a file exported from TAK-Extract. It
+        <strong>verifies</strong> the file by checking its hash against the audit log's record of
+        exports, and it <strong>replays</strong> the movement it contains on a map. Both run
+        entirely in your own browser; the file is never uploaded, and only a short fingerprint of
+        it is checked against the server.</p>
+
+    <div class="step">
+        <h3>1. Load a file</h3>
+        <p>Drag a full evidence package (<code>.zip</code>) or a locations map
+            (<code>.kmz</code>) onto the drop box, or click the box to select one. Files this
+            tool produced — from the Export page's evidence package or locations download — are
+            both verified and replayed. A KMZ exported by TAK Server itself, or by another tool,
+            replays too if it carries timestamped positions or tracks, but cannot be verified (see
+            below).</p>
+        <p class="tip">The file is read entirely in your browser. Only its SHA-256 hash is sent
+            to the server, to look up in the export audit log. No file contents and no location
+            data leave your machine. To load a different file, refresh the page.</p>
+        <figure class="shot narrow"><img src="/guide/img/verify-drop.png" alt="The drop box, before a file is loaded." loading="lazy"><figcaption>The drop box, before a file is loaded.</figcaption></figure>
+    </div>
+
+    <div class="step">
+        <h3>2. The verdict</h3>
+        <p>Above the tabs, in one block: <strong>what this package is</strong>. Each line is a
+            separate question, answered or honestly left unanswered, so the tabs below do not
+            have to be read and interpreted to work out where things stand.</p>
+        <ul>
+            <li><strong>Whether the package is in this tool&rsquo;s audit log</strong> &mdash;
+                and if it is, when it was exported, by which account and for whom. If it is
+                not, that is said plainly: it can mean the package came from a different
+                install, or was altered after it was built, and on its own it is not proof of
+                tampering.</li>
+            <li><strong>Whether every file inside matches the list built with the package</strong>
+                &mdash; each one hashed in your browser and compared with the package&rsquo;s own
+                <code>SHA256SUMS.txt</code>. Any that differ are named. Nothing is sent to do
+                this and nothing is recorded.</li>
+            <li><strong>Whether the records fall inside the window that was asked for</strong>,
+                where the log holds enough to tell.</li>
+            <li><strong>Whether an administrator&rsquo;s re-check was recorded</strong>. If none
+                was, that is stated as a fact rather than marked as a failure &mdash; a re-check
+                is corroboration over and above what is required, and a package without one is
+                not deficient.</li>
+        </ul>
+        <p class="tip">The second line and the first say different things, and the page keeps
+            them apart. <code>SHA256SUMS.txt</code> lives <em>inside</em> the zip, so on its own
+            it shows the files agree with the list that arrived beside them. It is the first
+            line &mdash; the whole package&rsquo;s hash matching the log &mdash; that ties that
+            list to the tool that built it. When the first line does not match, the second says
+            so instead of implying the stronger result.</p>
+        <figure class="shot"><img src="/guide/img/verify-verdict.png" alt="The verdict block: the package matched the audit log, every file inside matched the package's own list, and no re-check was recorded." loading="lazy"><figcaption>The verdict, above the tabs.</figcaption></figure>
+        <p><strong>Produce the certification&hellip;</strong> appears here when the package is in
+            the log. It returns a certification for a records custodian with the facts already
+            filled in from the log &mdash; the package&rsquo;s hash, every file&rsquo;s hash, and
+            the re-check&rsquo;s results where there was one &mdash; leaving only the declaration
+            and the signature for a person to complete, with counsel.</p>
+    </div>
+
+    <div class="step">
+        <h3>The result tabs</h3>
+        <p>Under the verdict, three tabs sit in a row above the map: <strong>Hash check</strong>,
+            <strong>File contents</strong> and <strong>Compare</strong>. They are the detail
+            behind the verdict &mdash; there is no need to open any of them to know where a
+            package stands.
+            Each tab shows its one-line result and takes its state colour — green for a
+            match, red for no match or a disagreement, neutral otherwise — so the state
+            of a file can be read at a glance without opening anything. Select a tab to open its
+            detail beneath the row; selecting another swaps to it, selecting the open one closes
+            it. Only one is open at a time, so the map stays close to the top of the page.</p>
+        <figure class="shot"><img src="/guide/img/verify-tabs.png" alt="The three result tabs in a row: a red hash check, a neutral file contents tab, and the Compare tab." loading="lazy"><figcaption>The result tabs after loading a file: here no logged export matched, so the hash tab is red.</figcaption></figure>
+    </div>
+
+    <div class="step">
+        <h3>3. Hash check</h3>
+        <p>Calculates the file's hash and looks it up in the audit log. A match shows the entry
+            recorded at export time: the account that ran the export, who it was run for, when,
+            and the time window, area and any channel filter requested. No match means no export
+            recorded here has this hash.</p>
+        <p>The <strong>Audit match</strong> line reports a second, separate check: whether the
+            file's <em>actual</em> data — its earliest and latest report times — falls inside the
+            window that was requested. A requested window is often wider than the data returned
+            within it, so the two are reported separately rather than treated as the same
+            fact.</p>
+        <figure class="shot"><img src="/guide/img/verify-hash.png" alt="The hash check opened: here no logged export matched, so the box is red and says so." loading="lazy"><figcaption>The hash check tab opened: no logged export matched, so the tab and its panel are red and say so.</figcaption></figure>
+    </div>
+
+    <div class="step">
+        <h3>4. File contents</h3>
+        <p>A summary taken from the file itself: how many people and other entities it covers,
+            how many position records it holds, and the time range those records span. These
+            figures are calculated from the file's own contents rather than looked up, so they
+            describe the file in front of you.</p>
+        <figure class="shot"><img src="/guide/img/verify-contents.png" alt="The file contents summary, opened." loading="lazy"><figcaption>The file contents summary, opened.</figcaption></figure>
+    </div>
+
+    <div class="step">
+        <h3>5. The map and playback</h3>
+        <p>Once a valid file loads, the map appears with everything in it, and the playback
+            controls below drive time.</p>
+        <ul>
+            <li><strong>Time readout &amp; scrubber:</strong> the readout shows the moment
+                currently being displayed; drag the scrubber to jump to any point in the file's
+                time range.</li>
+            <li><strong>Play / Reset to start:</strong> Play animates forward through time;
+                Reset returns to the beginning of the window.</li>
+            <li><strong>Speed:</strong> how fast playback runs relative to real time — from 1×
+                (real time) up to 14400× (four hours of activity per second) — for skimming a
+                long file or watching a short window closely.</li>
+            <li><strong>Click a point on the map</strong> for that report's full detail. (Full
+                detail is available when the loaded file is a <code>.kmz</code> or a
+                <code>.zip</code> containing a <code>.kmz</code>; a package's
+                <code>cot.csv</code> has no pre-built detail block, so it shows a name and time
+                instead.)</li>
+        </ul>
+        <figure class="shot"><img src="/guide/img/verify-playback.png" alt="Time readout, scrubber, the activity ribbon (shown), and the Play / Reset / Speed controls." loading="lazy"><figcaption>Time readout, scrubber, the activity ribbon (shown), and the Play / Reset / Speed controls.</figcaption></figure>
+    </div>
+
+    <div class="step">
+        <h3>6. Device activity timeline (the ribbon)</h3>
+        <p>A timeline showing when each device was reporting across the period the file covers,
+            including any gaps where a device stopped reporting. The <strong>Ribbon bars</strong>
+            control shows or hides the per-device bars, which are hidden by default.</p>
+
+    </div>
+
+    <div class="step">
+        <h3>7. Display style</h3>
+        <p>How each device is drawn as playback runs:</p>
+        <ul>
+            <li><strong>Current Position</strong> — a single dot showing where the device is at
+                the moment being displayed.</li>
+            <li><strong>Current Position &amp; Trail</strong> — the dot plus a line tracing where
+                it has been.</li>
+            <li><strong>Current Position + Breadcrumbs</strong> — every individual GPS report as
+                its own dot, plus a larger dot for the current position.</li>
+            <li><strong>Breadcrumbs</strong> — every individual report as its own dot, with no
+                connecting line, so reporting frequency and gaps are visible rather than smoothed
+                over.</li>
+            <li><strong>Trail/breadcrumb length</strong> — how far back the trail or breadcrumbs
+                extend behind the current position, from 5 minutes up to All. This is a separate
+                control from the scrubber: the scrubber sets the moment being displayed, and this
+                sets how much history is drawn behind it.</li>
+        </ul>
+        <figure class="shot"><img src="/guide/img/verify-style.png" alt="The four display styles and the trail length control." loading="lazy"><figcaption>The four display styles and the trail length control.</figcaption></figure>
+    </div>
+
+    <div class="step">
+        <h3>8. Who and what is shown</h3>
+        <ul>
+            <li><strong>People &amp; other tracked entities</strong> — one colored entry per
+                device. Click an entry to hide or show that device on the map. <strong>Show names
+                on map</strong> labels each device with its callsign.</li>
+            <li><strong>Channels</strong> (shown when the file carries them) — click a channel to
+                hide or show everyone on it at once; <strong>Select none / all</strong> toggles
+                them together. A device can belong to several channels.</li>
+            <li><strong>Other markers</strong> — dropped points, drawn map objects and other
+                markers that cannot represent a tracked person. These are hidden by default to keep
+                the map focused on people, and the section can be opened to show any of them. Note
+                that a drawn shape's anchor point also appears here as a single position record;
+                the shape itself is drawn on the map (see Drawn shapes, next). Two further groups may appear here: <em>Not GPS-tracked
+                (placed by hand)</em>, covering items whose positions were placed by a person
+                rather than measured by a device, and <em>Moved here manually</em>, covering
+                entities you have moved yourself using the control below.</li>
+            <li><strong>Drag to re-file</strong> — a device can be dragged between the "People
+                &amp; other tracked entities" list and "Other markers" when the automatic sorting
+                has placed it in the wrong one. This changes only how the device is grouped in your
+                current view; the file and its data are unchanged.</li>
+        </ul>
+        <figure class="shot"><img src="/guide/img/verify-legend.png" alt="Channels, the people list, the drawn-shapes list, and Other markers." loading="lazy"><figcaption>Channels, the people list, the drawn-shapes list, and Other markers.</figcaption></figure>
+    </div>
+
+    <div class="step">
+        <h3>9. Drawn shapes</h3>
+        <p>Fire lines, perimeters, circles and other drawn map objects from a full package are
+            drawn as they stood at the current playback time. A shape that was redrawn changes as
+            playback moves, and one the server recorded as deleted disappears at that moment.
+            Shapes are always drawn beneath people, so a filled area never hides anyone, and a
+            shape drawn inside another stays on top of it.</p>
+        <p>Click a shape on the map for its details: which version is shown and how many there
+            are, when that version began, who drew or edited it, its size, and whether it was
+            later replaced or deleted. The <strong>Drawn shapes</strong> list works like the people
+            list — click an entry to hide or show that shape, or use <strong>Select none /
+            all</strong>.</p>
+        <figure class="shot"><img src="/guide/img/verify-map.png" alt="Drawn shapes at one moment of playback: a perimeter, a hazard area inside it, a staging circle, a fire line, and two units on top." loading="lazy"><figcaption>Drawn shapes at one moment of playback: a perimeter, a hazard area inside it, a staging circle, a fire line, and two units on top.</figcaption></figure>
+        <figure class="shot"><img src="/guide/img/verify-shape-popup.png" alt="Clicking a shape: which version is shown, when it began, who drew it, and what happened next." loading="lazy"><figcaption>Clicking a shape: which version is shown, when it began, who drew it, and what happened next.</figcaption></figure>
+    </div>
+
+    <div class="step">
+        <h3>10. Compare: the re-check</h3>
+        <p>The third tab shows the administrator's re-check (Export, the optional re-check) as soon as the
+            package loads: green if the server's <code>cot_router-raw.csv</code> hash matched the
+            package's, red if not, with when it was recorded, under which account, where the files
+            are on the server, and the hash of the <code>.tgz</code>. Nothing to choose &mdash; the
+            record was written when the server posted its hashes.</p>
+        <figure class="shot"><img src="/guide/img/verify-compare.png" alt="The Compare tab opened: the recorded re-check, green, with the server folder and hashes." loading="lazy"><figcaption>The Compare tab with a recorded re-check.</figcaption></figure>
+        <p>For a mismatch, fetch <code>&lt;case&gt;-recheck-cot_router-raw.csv</code> from the
+            server folder and select <strong>Choose a re-check file</strong>: it is compared with the
+            package's own <code>cot_router-raw.csv</code> <strong>exactly by row id</strong> &mdash;
+            every id present on both sides with identical values &mdash; and any difference is
+            listed by id and field. The file's SHA-256 is shown and looked up; signed in as an
+            administrator, <strong>Record this file</strong> writes it to the audit log too.</p>
+        <p class="tip">A KML/KMZ has no row ids, so a KML/KMZ compared here is matched by callsign,
+            time and position (within 1 second and 1 metre) with a per-device table and, for any
+            unmatched positions, the likely reasons. Files are read in your browser; only a
+            SHA-256 hash leaves it, and only when an administrator records one.</p>
+    </div>
+
+    <div class="step">
+        <h3>Sharing an export &amp; using other viewers</h3>
+        <p>The locations file (<code>.kmz</code>) this tool produces is a <strong>standard
+            KMZ</strong>, not a proprietary format. It opens in Google Earth or any other KML
+            viewer, showing the points, track lines and per-point details, and replaying the same
+            movement through that viewer's own time slider. Drawn shapes from a full package —
+            fire lines, perimeters, circles — are included as real geometry, one entry per version,
+            each shown on the time slider only while it was current, so a line that was redrawn
+            changes as the slider moves and a deleted shape disappears at the moment the server
+            recorded its removal. This makes an export straightforward to
+            hand to someone who does not have access to this tool.</p>
+        <p>What those other viewers <strong>can't</strong> do is check it against the audit log.
+            That check — looking the file's hash up in this installation's record of exports —
+            is unique to this page. Use Google Earth or a similar viewer to <em>view or share</em>
+            an export, and use this page whenever the question is whether a file is one this tool
+            recorded.</p>
+        <p><strong>Files from TAK Server or other tools.</strong> A KMZ exported by TAK Server
+            itself — or by ATAK, Google Earth, or another tool — replays here if it carries
+            timestamped positions or tracks: the page reads each device's track and any timed point
+            and shows them as the file states them. Anything without a timestamp (drawn shapes,
+            untimed points, lines) cannot be placed on a timeline; the summary counts how many were
+            left out rather than dropping them silently.</p>
+        <p class="warn">What such a file <strong>cannot</strong> get is verification. It did not
+            come from this installation, so there is no audit-log entry to check it against; the
+            hash check shows no match and the file summary says <strong>NOT PRODUCED BY THIS
+            TOOL</strong>. Positions are replayed exactly as the file states them — nothing here
+            confirms they are genuine or complete.</p>
+    </div>
+
+
+    <!-- ============================ EVIDENCE ========================== -->
+    <h2 id="evidence"><span>Using an export as evidence</span><a class="top" href="#top">&uarr; top</a></h2>
+    <p>Two questions follow an export into a report or a courtroom: <em>is this the file that
+        was produced?</em> and <em>is what it holds what the server held?</em> This section lists
+        what the tool records for each, and what none of it can say. It is not legal advice;
+        what a court requires is a question for counsel.</p>
+
+    <div class="step">
+        <h3>What the package and the log record</h3>
+        <ul>
+            <li><strong>The file.</strong> Its SHA-256, calculated when it was built and written
+                to the audit log before download; a hash for every file inside it
+                (<code>SHA256SUMS.txt</code>). Recompute with any standard utility &mdash;
+                <code>Get-FileHash</code>, <code>certutil -hashfile</code>, <code>sha256sum</code>
+                &mdash; and compare with the audit log; no tool needed.</li>
+            <li><strong>The read.</strong> The README states, as the database answered: every
+                statement ran in one repeatable-read, read-only transaction (the snapshot id is
+                printed; the server refuses a write inside it); the account used and the write
+                privileges the database says it holds; the database clock beside the tool's; the
+                version and git commit of the code that ran.</li>
+            <li><strong>The statements.</strong> <code>queries.sql</code>: each one exactly as
+                sent, with its values. Readable, and re-runnable (Export, the optional re-check).</li>
+            <li><strong>The server's own rows.</strong> <code>cot_router-raw.csv</code>: every
+                column of every position row as stored, unmodified, in the server's text form
+                &mdash; the closest thing to the server's record a file can be, and the copy that
+                outlives the server's retention period.</li>
+            <li><strong>The re-check.</strong> The administrator's own re-run on the server: the
+                results kept per case under <code>/var/lib/takextract/recheck/</code> with a
+                <code>RECHECK-INFO.txt</code> (the copy that outlives the server's retention purge),
+                and its hashes recorded in the audit log the moment they were posted (Export,
+                the optional re-check; Verify step 10). Corroboration over and above what is
+                required &mdash; a package without one is not deficient.</li>
+            <li><strong>The log itself.</strong> Every entry is chained to the one before it by
+                hash; an edit, deletion or insertion after the fact is detectable (System &rarr;
+                Audit log integrity, or from the downloaded log).</li>
+            <li><strong>How to check it.</strong> <code>VERIFY.txt</code> in the package: the one
+                command that checks every file at once, what a failed line means, and what the
+                check does and does not show &mdash; for whoever receives the package and has no
+                access to this tool.</li>
+            <li><strong>Which database it came from.</strong> Recorded in the package README and
+                in the audit entry, so a package can be told apart from one produced against a
+                different server (System &rarr; Which database exports come from).</li>
+            <li><strong>A certification.</strong> Produced from Verify &amp; Replay with the
+                facts above, every file's hash and the re-check's results already entered,
+                leaving the declaration and signature for a records custodian to complete with
+                counsel. It is generated on demand rather than shipped blank in the package,
+                because by the time anyone fills it in the log already holds every value it
+                used to leave as a blank.</li>
+        </ul>
+    </div>
+
+    <div class="step">
+        <h3>Which artifact answers which question</h3>
+        <ul>
+            <li><em>"The file changed."</em> &mdash; the package hash against the audit log; the
+                per-file hashes.</li>
+            <li><em>"The tool copied wrongly."</em> &mdash; the raw rows (nothing parsed); the
+                administrator's re-check (a second person, a second program); the public source.</li>
+            <li><em>"The query was wrong."</em> &mdash; <code>queries.sql</code> is readable.</li>
+            <li><em>"The files were read at different moments."</em> &mdash; the snapshot: one
+                transaction, one instant.</li>
+            <li><em>"The tool could have altered the server."</em> &mdash; the account's privileges
+                as the database reported them; a read-only transaction the server enforces.</li>
+            <li><em>"Which code ran."</em> &mdash; version and commit, in the README and the log.</li>
+            <li><em>"Who did what, when."</em> &mdash; the audit log: export, download, re-check
+                record; chained.</li>
+            <li><em>"The positions are accurate."</em> &mdash; nothing here can say. The data
+                carries what a witness needs: <code>servertime</code> (the server's clock, the one
+                an agency controls) beside <code>event_time</code> (the device's); the fix source
+                (GPS, accuracy unknown, placed by hand); the accuracy figure the device reported;
+                device model and software. A callsign is the name a device used, not who carried
+                it; where the server recorded nothing, the file says so.</li>
+        </ul>
+        <p class="warn">The audit log lives in this tool's own data, not in TAK Server. Back it
+            up (System &rarr; Backup) and treat it as part of the evidence trail.</p>
+    </div>
+
+    <!-- ============================ AUDIT ============================= -->
+    <h2 id="audit"><span>Audit Log</span><a class="top" href="#top">&uarr; top</a></h2>
+    <p>A record of every export request the tool has handled: who ran it, what was requested,
+        when, and the outcome. It is the provenance record for any file this tool has produced.</p>
+
+    <div class="step">
+        <h3>What the log records</h3>
+        <p>The log records the <em>shape</em> of each request — <strong>no location data</strong>.
+            You can see that someone exported a given area and window, but not where anybody
+            was.</p>
+        <p>Every entry carries the version and commit of the code that wrote it, and two hash
+            columns: a SHA-256 of the entry's own content and the previous entry's hash, so the
+            log is a chain. The System page verifies it; the downloaded log carries the same
+            columns, so anyone can. Entries from before chaining was added have no hash and are
+            reported as predating it, never as broken.</p>
+        <p>Besides exports and log downloads, the log holds <strong>companion</strong> entries:
+            an administrator recording the hash of a re-check file beside the package it was made
+            for (Export, the optional re-check; Verify step 10). The entry names the file, the package's hash and
+            how many rows matched.</p>
+        <p>Two identity fields are recorded in separate columns. <strong>Who ran it</strong> is
+            the account that was signed in; it cannot be entered by hand or altered by the person
+            requesting the export. <strong>For</strong> is entered by the operator at export time
+            to record who requested it, and is <em>not</em> verified identity. They are stored
+            separately so that an entered note is not read as a verified one.</p>
+    </div>
+
+    <div class="step">
+        <h3>Reading the log</h3>
+        <p>The log opens as <strong>one line per case</strong>, most recently active first. Each
+            line gives the case reference, how many extractions it holds and how many events in all,
+            when the last one was, and the case's verdict — the result of its re-checks, coloured,
+            so a case that did not hold up stands out without opening anything.</p>
+        <p>Click the case and it opens into its <strong>extractions</strong>, oldest first and
+            numbered: <em>Extraction 1</em>, <em>Extraction 2</em>. Under each one sit the events
+            that belong to <em>that</em> extraction — the TAK Server fetching its script, the
+            re-check that followed — so with several extractions for one case it is plain which
+            re-check checked which export. Anything belonging to the case but not to a particular
+            extraction (a file preview, a log download, a case correction) is grouped at the end
+            under <strong>Other activity for this case</strong>.</p>
+        <p>Entries that belong to no case at all — a user added, the connection settings changed,
+            a backup restored — are not cases and are not listed among them. They have their own
+            <strong>Application-wide activity</strong> section under the case list, on every page.</p>
+        <p>Each line says in words what it was — <em>Evidence package exported</em>, <em>TAK
+            Server fetched the script</em>, <em>Re-check on the TAK Server</em>, <em>Case reference
+            corrected</em>. The recorded value behind that wording (<code>package</code>,
+            <code>recheck</code>, and so on) is shown inside the opened entry as <strong>recorded
+            as</strong>: it is what the row actually holds, what the downloaded CSV carries, and what
+            the hash chain covers.</p>
+        <p>Click an entry and it opens in turn, listing everything that entry recorded:</p>
+        <ul>
+            <li><strong>What happened</strong> — the same plain wording, a sentence saying what
+                that kind of entry is, and the recorded value behind it.</li>
+            <li><strong>Recorded / Who ran it / For</strong> — the time in the server's own
+                timezone, the account that was signed in, and who the operator said it was for.</li>
+            <li><strong>Window / Area</strong> — the time range and geographic box requested,
+                on the entries that have one.</li>
+            <li><strong>Records</strong>, or <strong>Files hashed on the server</strong> on a
+                re-check — the label says which, so a count is never read as the other thing.</li>
+            <li><strong>SHA-256 of</strong> — the hash, with the file it is the hash of above it
+                and a line saying its role. On an export that is the file you were handed; on a
+                re-check or a recorded companion file it is <em>the export the entry refers to</em>,
+                which is the value most easily misread as something the entry itself produced.</li>
+            <li><strong>Files in the package</strong>, on an export — every file the package
+                held and the hash it had when the package was built, folded away until asked for.
+                That is what lets a single CSV handed over later be checked against the log
+                without the package, and it is where the SQL query script's own hash is.</li>
+            <li><strong>What was compared</strong>, on a re-check — the two files that were
+                compared by hash, each named, each with its own result; then the count of the
+                files that were <em>recorded, not compared</em>, and a line saying why. The full
+                list of what the server hashed opens underneath, hash by hash. Nothing is
+                coloured as a pass except a comparison that was actually made.</li>
+            <li><strong>Files excluded</strong> — anything left out of that export, so a partial
+                export still accounts for what it didn't include.</li>
+            <li><strong>Re-check</strong>, on an export — <em>Re-check this extraction</em> issues
+                a fresh line to paste on the TAK Server for that package, months after the export
+                if need be (Export, the optional re-check). Asking is itself an entry, <em>Re-check offered
+                again</em>, and if the kept script does not have the hash the export recorded,
+                nothing is issued and that disagreement is what gets written down.</li>
+            <li><strong>Detail</strong> — the rest of what was recorded, a clause per line, each
+                hash with the name of the file it belongs to. For a re-check this is where the
+                server, the folder its files are in, and the two verdicts appear.</li>
+        </ul>
+        <p class="tip"><strong>Flat list</strong> (beside the filter box) switches to one line per
+            entry across every case, newest first — for "what happened today" rather than
+            "what happened to this case". Its column labels sort the whole log, not just the page
+            you are looking at. <strong>By case</strong> switches back.</p>
+    </div>
+
+    <div class="step">
+        <h3>Correcting a case reference</h3>
+        <p>A case typed wrong at export time repeats on everything that follows it — the package,
+            the fetch of its script, its re-check. An administrator can put it right: <strong>Correct
+            case&hellip;</strong> on a case line renames every entry recorded under it, and <strong>Correct
+            this entry's case&hellip;</strong> inside an opened entry moves just that one. Both ask for the
+            correct reference and, if you want, a reason, which is recorded with it.</p>
+        <p><strong>Nothing already in the log is altered.</strong> The case is one of the fields the
+            hash chain covers, so rewriting it would break that entry's hash and every link after it
+            — the log would report itself as tampered, and that alarm has to keep meaning something.
+            A correction is therefore recorded as its own entry, of kind <code>case-correction</code>,
+            naming what was corrected, from what to what, by whom and why.</p>
+        <p>What you see afterwards: the case is listed under the corrected name and carries its
+            entries and the correction entry together, while each corrected entry still shows
+            <strong>Case recorded as</strong> with the name it was filed under at the time. The filter
+            finds the case under either name, because both are things that really happened. A reader
+            sees the mistake and the correction, rather than a tidy log that quietly disagrees with
+            the package someone is holding.</p>
+        <figure class="shot"><img src="/guide/img/audit-table.png" alt="The log as a list of cases, one opened to show its entries and one entry opened to show what it recorded." loading="lazy"><figcaption>One case opened, and one of its entries opened inside it.</figcaption></figure>
+        <figure class="shot"><img src="/guide/img/audit-recheck.png" alt="A re-check entry opened: the two compared files named with their results, the count of files recorded but not compared, and the line saying why." loading="lazy"><figcaption>A re-check opened: what was compared, what was only recorded, and why.</figcaption></figure>
+    </div>
+
+    <div class="step">
+        <h3>Finding and exporting entries</h3>
+        <ul>
+            <li><strong>Filter</strong> — narrow the list by case ID or the name of whoever ran
+                the export.</li>
+            <li><strong>Prev / Next</strong> — page through the log.</li>
+            <li><strong>Download selected</strong> — tick what you want and download only that.
+                A tick takes everything under it: on a case, all of its entries; on an extraction,
+                that export and the events that checked it. This is the usual method, as most
+                requests concern a single case.</li>
+            <li><strong>Download entire log</strong> — exports every entry.</li>
+        </ul>
+        <p class="tip">Downloading the log is itself recorded. <strong>Case / Incident</strong>
+            and <strong>Exported For</strong> beside the buttons are required, as on the Export
+            page, and a new entry is written for the download.</p>
+    </div>
+
+    <!-- ============================ SYSTEM ============================= -->
+    <h2 id="system"><span>System</span><a class="top" href="#top">&uarr; top</a></h2>
+    <p>Setup and administration: who can sign in, how the tool reaches the TAK Server, backups,
+        and updates. Available to administrators only.</p>
+
+    <div class="step">
+        <h3>Users and roles</h3>
+        <p>Only people listed here can use the tool. There are two roles:</p>
+        <ul>
+            <li><strong>admin</strong> — Export, Audit Log, and this System page.</li>
+            <li><strong>viewer</strong> — <em>only</em> Verify &amp; Replay. A viewer can check and
+                replay a file they've been given, but cannot pull new data out of the TAK server
+                at all.</li>
+        </ul>
+        <p class="tip">Assign <strong>viewer</strong> to anyone whose role is to examine an
+            export rather than produce one; it grants no access to TAK Server data. When adding a
+            user, <strong>Generate</strong> creates a strong password, <strong>Copy</strong>
+            places it on the clipboard, and <strong>Show</strong> displays it.</p>
+        <figure class="shot"><img src="/guide/img/system-users.png" alt="The Users panel with an admin and a viewer account." loading="lazy"><figcaption>The Users panel with an admin and a viewer account.</figcaption></figure>
+    </div>
+
+    <div class="step">
+        <h3>TAK Server connection</h3>
+        <p>The database connection this tool reads from: host, port, database name, user, and
+            password. A status badge beside the heading shows the state of the saved connection:
+            <strong>Connected</strong> (green), <strong>Disconnected</strong> (red, with the reason
+            shown on hover), or <strong>Not configured</strong> (amber) when no settings have been
+            saved. Select the badge to check again.</p>
+        <p><strong>Test connection</strong> and the badge report different things and may
+            disagree. Test connection checks the values currently entered in the form, which is
+            useful when trying a new host before saving it. The badge reports the saved settings,
+            which are the ones the tool uses; it refreshes after a successful
+            <strong>Save</strong>.</p>
+        <div class="badges">
+            <figure class="shot"><img src="/guide/img/system-badge-ok.png" alt="Connected badge, green" loading="lazy"><figcaption>Connected</figcaption></figure>
+            <figure class="shot"><img src="/guide/img/system-badge-bad.png" alt="Disconnected badge, red" loading="lazy"><figcaption>Disconnected</figcaption></figure>
+            <figure class="shot"><img src="/guide/img/system-badge-warn.png" alt="Not configured badge, amber" loading="lazy"><figcaption>Not configured</figcaption></figure>
+        </div>
+        <p>The correct <strong>Host</strong> depends on how this application is running, not
+            only on where Postgres is installed:</p>
+        <ul>
+            <li><strong>Directly on the TAK Server machine</strong> (no Docker): <code>127.0.0.1</code>
+                or <code>localhost</code>.</li>
+            <li><strong>In Docker on the TAK Server machine</strong>: <code>127.0.0.1</code> is
+                <em>wrong</em> &mdash; inside the container it means the container itself. Run
+                <code>./connect-database.sh</code> from the repository; it finds the right address and
+                sets up what is needed to reach it (the firewall, Postgres's
+                <code>listen_addresses</code> and <code>pg_hba.conf</code>), asking before any
+                disruptive step.</li>
+            <li><strong>A separate server</strong> (split or high-availability install): that server's
+                address, with its Postgres configured to accept connections from this machine and no
+                firewall blocking the port.</li>
+        </ul>
+        <p class="tip"><strong>Port</strong> and <strong>Database</strong> default to TAK Server's own
+            values (5432, <code>cot</code>) when left blank. The <strong>User</strong> should be a
+            dedicated read-only account with least privilege, not TAK Server's own database user;
+            the tool never writes to TAK Server, and there is deliberately no default.</p>
+    </div>
+
+    <div class="step">
+        <h3>Backup &amp; restore</h3>
+        <p><strong>Download backup</strong> saves this tool's own data — user accounts, settings,
+            and the audit log. It does <strong>not</strong> include the TAK Server password, which
+            is deliberately left out so a backup file isn't a credential leak; you re-enter it
+            after a restore.</p>
+        <p class="warn"><strong>Restore replaces everything</strong> — every user, every audit
+            log entry and every connection setting is overwritten by the contents of the backup.
+            Confirm the file is the one you intend before proceeding. A safety copy of the current
+            data is kept only until the restore succeeds, in case the upload turns out to be bad.</p>
+    </div>
+
+    <div class="step">
+        <h3>Which database exports come from</h3>
+        <p>Every export records the identity of the database it read, so a package can be told
+            apart from one produced against a different server. This panel compares that with
+            what the connection points at <em>now</em>, which is the thing worth catching: the
+            TAK Server connection is editable from this page, so an install can be repointed
+            between exports and nothing else would say so.</p>
+        <p>Where the read-only account has been granted <code>EXECUTE</code> on
+            <code>pg_control_system()</code> &mdash; offered by <code>connect-database.sh</code>,
+            read-only, no access to any data &mdash; the value is the database cluster's own
+            identifier, fixed when the cluster was created and unchanged by restarts, address
+            changes or TAK Server upgrades. Without that grant it falls back to catalog
+            identifiers: the database name and two OIDs, which any account can read but which are
+            small numbers two unrelated servers could match by chance. The package states which
+            of the two it used, and the panel says when it is the weaker one.</p>
+        <p class="tip">A difference is <strong>not</strong> in itself a sign that anything is
+            wrong. A rebuilt, upgraded or restored cluster reports a new identifier while holding
+            the same data. Equally, a match does not prove which machine was read: a replica
+            reports the same identifier as the cluster it copies. The panel flags; it does not
+            conclude.</p>
+    </div>
+
+    <div class="step">
+        <h3>Database structure</h3>
+        <p>A TAK Server or PostgreSQL upgrade can change the database underneath this tool.
+            Most of what that breaks is <em>loud</em>: a query against a table that no longer
+            exists fails, and the package README prints
+            <code>*** THIS FILE FAILED TO GENERATE ***</code> beside the file, with the reason.
+            That case looks after itself.</p>
+        <p>What this panel is for is the quiet case &mdash; structure that changed and still
+            works:</p>
+        <ul>
+            <li>A column <strong>added</strong> to <code>cot_router</code> changes what
+                <code>&lt;case&gt;-cot_router-raw.csv</code> contains. Nothing errors; the file
+                is simply a different shape from the one an earlier package holds.</li>
+            <li>A geometry column in a <strong>different SRID</strong> makes the map-area filter
+                compare against an envelope built in another coordinate system. It does not
+                raise &mdash; it returns <em>nothing</em>, so an export looks clean and is
+                empty.</li>
+            <li>A retyped channel-mask column stops decoding, so <strong>channel filtering
+                silently matches nothing</strong>.</li>
+        </ul>
+        <p>The panel compares the tables, their columns and types, and the PostGIS geometry
+            columns against the record made when <code>connect-database.sh</code> connected this
+            tool to the server. The same comparison runs inside <strong>every export</strong>,
+            and its result is written into that package's README and its audit entry &mdash; so
+            what the structure was when a package was built is recorded <em>with the package</em>,
+            not only whenever someone remembers to look here.</p>
+        <p><strong>Approve</strong> accepts what is there now as the new baseline. Use it once
+            you have looked at a difference and it is expected; the audit log records who
+            approved it and what was accepted. If the structure changes between the page loading
+            and you pressing it, the approval is refused rather than letting you accept something
+            you did not see.</p>
+        <p class="tip">A difference is <strong>not</strong> in itself a sign that anything is
+            wrong, and this panel never says that it is. An upgrade changes structure
+            legitimately. It is recorded so that it is known rather than assumed.</p>
+
+    </div>
+
+    <div class="step">
+        <h3>The fuller database check, after an upgrade</h3>
+        <p>On the server, in the install directory:</p>
+        <pre><code>sudo ./check-database.sh</code></pre>
+        <p>This runs <strong>every statement an export sends</strong> &mdash; from the same code
+            that builds a package, so it cannot drift from it &mdash; and then the handful of
+            checks above that need real values rather than types. It is read-only throughout:
+            every statement is a <code>SELECT</code>, in a <code>READ ONLY</code> transaction,
+            under an account with no write privileges. It writes its verdict to the audit log
+            like any other action.</p>
+        <p>Exit codes, for anyone scripting it: <code>0</code> all well, <code>1</code> drift or
+            warnings, <code>2</code> something is wrong, <code>3</code> could not connect at all.
+            A connection failure names what it usually is &mdash; a <code>pg_hba.conf</code> line
+            a major-version upgrade did not carry across, a role that did not survive, a cluster
+            left on a different port, or <code>listen_addresses</code> back at
+            <code>localhost</code> where a container on the Docker bridge cannot reach it.</p>
+        <p>Once a difference has been reviewed and is expected:</p>
+        <pre><code>sudo ./check-database.sh --approve-baseline --approved-by "your name"</code></pre>
+        <p class="tip">A baseline records the structure as it is <em>at that moment</em>. If this
+            tool was connected after an upgrade had already happened, the baseline captures the
+            upgraded state &mdash; nothing can reconstruct what was there before. The statement
+            pass and the SRID and decode checks still say whether today's database is sound; the
+            baseline is what protects the <em>next</em> upgrade.</p>
+    </div>
+
+    <div class="step">
+        <h3>Re-check folder on the TAK Server</h3>
+        <p>One-time setup per TAK Server so the Export page's re-check line has somewhere to keep
+            its files: <code>/var/lib/takextract/recheck</code>, owned by <code>postgres</code> (psql
+            writes there), in an operating-system group <code>takextract</code> holding
+            <code>postgres</code> and the administrator accounts (they read, move, archive and
+            delete without sudo), mode <code>2770</code>. A group, not a login &mdash; nothing new
+            can sign in &mdash; and file-system permission only, unrelated to the database role or
+            its privileges. <code>connect-database.sh</code> does this as one of its steps and
+            leaves a note in <code>.env</code>; the panel then shows <strong>Set up &hellip;</strong>
+            with when and on which host, and, once a re-check has been posted, the newest one
+            recorded. Without either it shows the same line for a server that never ran the
+            script. Log out and back in after the setup so the group applies.</p>
+        <figure class="shot"><img src="/guide/img/system-recheck.png" alt="The Re-check folder panel with the one-time setup line and a copy button." loading="lazy"><figcaption>The one-time setup line.</figcaption></figure>
+    </div>
+
+    <div class="step">
+        <h3>Audit log integrity</h3>
+        <p><strong>Verify audit log chain</strong> recomputes every entry's hash from its stored
+            content and checks each against the next: intact, or broken at a named entry with the
+            reason (content edited; an entry removed, inserted or reordered). Read-only. The one
+            change an entry may legitimately receive after it is written &mdash; the delivery note
+            added when an export's download completes &mdash; is excluded from the hash.</p>
+        <figure class="shot"><img src="/guide/img/system-chain.png" alt="The Audit log integrity panel after verifying: chain intact." loading="lazy"><figcaption>The chain verified.</figcaption></figure>
+    </div>
+
+    <div class="step">
+        <h3>Check for updates</h3>
+        <p>Compares your installation against the latest published version. The check is
+            read-only: it installs nothing, and reports what is available along with the commands
+            to apply it.</p>
+    </div>
+
+    <div class="step">
+        <h3>Appearance</h3>
+        <p>Light, dark, or follow your system preference. The setting applies to your account
+            only and does not affect other users.</p>
+    </div>
+
+    <p class="backlink">Each page's <strong>Guide</strong> button opens this page at the top; the
+        buttons above jump to each section. Which pages you can reach depends on your role — a
+        viewer account has only Verify &amp; Replay.</p>
+    </div>
+</body>
+</html>
