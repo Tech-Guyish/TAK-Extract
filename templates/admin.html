@@ -692,7 +692,7 @@
                 var text = d.ok
                     ? 'Chain intact: ' + d.checked + ' entr' + (d.checked === 1 ? 'y' : 'ies') + ' verified' +
                       (d.first_chained_id ? ' (entries ' + d.first_chained_id + ' to ' + d.last_id + ')' : '') +
-                      (d.unchained ? '; ' + d.unchained + ' older entr' + (d.unchained === 1 ? 'y' : 'ies') + ' predate chaining' : '') + '.'
+                      (d.unchained ? '; ' + d.unchained + ' older entr' + (d.unchained === 1 ? 'y predates' : 'ies predate') + ' chaining' : '') + '.'
                     : 'CHAIN BROKEN at entry ' + d.broken_id + ': ' + d.reason + ' (' + d.checked + ' entries verified before it).';
                 showMsg(msg, d.ok, text);
             }).catch(function (e) { showMsg(msg, false, String(e)); });
