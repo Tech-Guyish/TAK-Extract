@@ -1008,12 +1008,23 @@
             // "open .env: permission denied" - and compose reports that
             // and stops, so the pull succeeds and nothing is rebuilt.
             // Harmless where .env is not root-owned.
+            // Always lead with the directory. Without it this reads as 'run
+            // these anywhere', and `git pull` from a home directory fails with
+            // 'not a git repository' - reported from a real install. A container
+            // cannot discover its own host path, so it prints what setup.sh
+            // recorded, or an obvious placeholder when that is missing rather
+            // than a plausible-looking guess.
+            var hostDir = d.host_install_dir || '/path/to/your/TAK-Extract/clone';
             var commands = d.in_container
-                ? 'git pull\nsudo docker compose up -d --build'
+                ? 'cd ' + hostDir + '\ngit pull\nsudo docker compose up -d --build'
                 : 'cd ' + (d.install_dir || '.') + '\ngit pull\nsudo systemctl restart tak-extract';
             var note = d.in_container
-                ? 'Run on the Docker HOST, in this repo\'s directory - not inside the running container. '
+                ? 'Run on the Docker HOST - not inside the running container. '
                   + 'sudo because .env is owner-only.'
+                  + (d.host_install_dir ? ''
+                     : ' This install has not recorded where its clone sits on the host'
+                       + ' (re-run ./setup.sh, or add HOST_INSTALL_DIR to .env) - put that'
+                       + ' path in the first line.')
                 : 'Run as an account that can write ' + (d.install_dir || 'the install directory') +
                   '. Assumes tak-extract.service - if this runs some other way, restart however you '
                   + 'normally do instead.';

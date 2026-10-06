@@ -5,6 +5,12 @@ at v0.4.0 — entries before that predate it and carry no version number.
 
 ---
 
+### v1.21.3 (BETA) — 2026-10-06
+
+- 🐛 `Bug Fix` - **The update command says where to run it.** On a Docker install the System page printed `git pull` and the rebuild line with no directory, because a container cannot discover where its clone sits on the host - inside one the app only ever sees `/app`. Run from anywhere else that fails with `fatal: not a git repository`, which is what happened on a real install. `setup.sh` now records `HOST_INSTALL_DIR` in `.env`, which `docker-compose.yml` already passes into the container whole, and the command block always leads with `cd <path>`: the recorded one where there is one, an obvious `/path/to/your/TAK-Extract/clone` placeholder where there is not, with a line saying to replace it. Never a plausible-looking guess at a path the app does not know. An install made before this keeps working and shows the placeholder until `setup.sh` is re-run or the line is added by hand.
+
+---
+
 ### v1.21.2 (BETA) — 2026-10-06
 
 - 🔒 `Security` - **The https redirect no longer echoes the Host header back.** With `SERVE_TLS=true` a plain-http request was answered with a redirect built from `request.url`, which embeds the Host header verbatim - so a request claiming `Host: evil.example` was answered with `https://evil.example/<same path>`. Following that is the caller's own problem; a cache sitting in front of the app is not, because it would key the redirect on the path and could then serve it to somebody else. `SERVE_TLS` is documented as the no-proxy case, which makes that unlikely - but nothing in the code enforced it. The target is now built from the hosts this install actually answers to: `TLS_CERT_HOST`, or the detected LAN address, the same derivation the certificate's own subject uses, plus loopback. An unrecognised Host is redirected to the expected one rather than refused, so a misconfigured-but-honest request still lands somewhere usable. The port is kept so the redirect stays reachable, but only when it really is a port - re-reading the first version of this fix showed it carrying whatever followed the colon straight through from the same untrusted header, which is reachable with a raw `Host:` even though the test client's own builder rejects it.

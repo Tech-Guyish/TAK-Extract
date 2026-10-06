@@ -283,6 +283,16 @@ if [ "$(get_env_var INSTALL_MODE "")" != "$install_mode" ]; then
     set_env_var INSTALL_MODE "$install_mode"
 fi
 
+# The directory this clone lives in ON THE HOST. A container cannot work
+# this out for itself - inside it, the app only ever sees /app - so the
+# System page's update command could say "git pull" without being able to
+# say where to run it, and running it in the wrong place fails with
+# "not a git repository". docker-compose.yml already passes the whole of
+# .env into the container through env_file, so recording it here is enough
+# for the app to read it back. Re-written every run, since a clone can be
+# moved.
+set_env_var HOST_INSTALL_DIR "$(pwd)"
+
 
 # Runs every time, not just on a fresh .env - a port that was free before
 # can be taken by the time this re-runs. Docker's own failure here

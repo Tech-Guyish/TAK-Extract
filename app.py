@@ -102,7 +102,7 @@ AUDIT_DB = os.getenv("AUDIT_DB", "audit.sqlite")
 # is the ONLY place the version is written - exports.build_package() takes
 # it as a required argument rather than defaulting to its own copy, which
 # is how the two were able to disagree in the first place.
-APP_VERSION = "TAK-Extract 1.21.2 (BETA)"
+APP_VERSION = "TAK-Extract 1.21.3 (BETA)"
 
 
 def _detect_commit():
@@ -3967,6 +3967,13 @@ def check_updates():
             # "git pull" in the update command would run in the wrong place
             # and report success for having done nothing.
             "install_dir": app.root_path,
+            # Where the clone sits on the HOST, for a Docker install - the
+            # one thing this process genuinely cannot work out, since it
+            # only ever sees /app. setup.sh writes it into .env, which
+            # docker-compose.yml passes in whole. Absent on an install made
+            # before this, or one built by hand; the page then says so
+            # rather than printing a command that assumes a directory.
+            "host_install_dir": (os.getenv("HOST_INSTALL_DIR") or "").strip(),
         })
     except subprocess.TimeoutExpired:
         return jsonify({"checked": False, "error": "timed out reaching the git remote"})
