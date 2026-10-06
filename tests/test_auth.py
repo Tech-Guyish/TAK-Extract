@@ -18,6 +18,19 @@ import tempfile
 # every snippet below runs in, because app.py, exports.py and the rest are
 # imported from there. HERE is this folder, which the snippets need on
 # PYTHONPATH for test_support.
+def tmp_sqlite():
+    """A path for a database that does not exist yet, inside a directory only
+    this process can write.
+
+    tempfile.mktemp() returns a name without reserving it, so anything else on
+    the machine can take that name between the call and the open - the race
+    CodeQL reports as py/insecure-temporary-file. mkdtemp() creates its
+    directory atomically with 0700, so a name inside it is this process's
+    alone, and the file itself still does not exist yet, which is what every
+    caller here wants (the app or sqlite3 creates it)."""
+    return os.path.join(tempfile.mkdtemp(), "audit.sqlite")
+
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 failures = []
@@ -60,7 +73,7 @@ DB_ENV = {"DB_HOST": "unused", "DB_PORT": "5432", "DB_NAME": "unused",
 def local_env(**extra):
     env = dict(DB_ENV)
     env.update({
-        "AUDIT_DB": tempfile.mktemp(suffix=".sqlite"),
+        "AUDIT_DB": tmp_sqlite(),
         "AUTH_MODE": "local",
         "SECRET_KEY": "test-secret",
         "BOOTSTRAP_ADMIN_USERNAME": "admin",
@@ -336,7 +349,7 @@ if r.returncode != 0:
 # Bootstrap password: generated + printed once, verifies, doesn't reprint
 # ---------------------------------------------------------------------------
 same_db_env = local_env(BOOTSTRAP_ADMIN_PASSWORD="")
-same_db_env["AUDIT_DB"] = tempfile.mktemp(suffix=".sqlite")
+same_db_env["AUDIT_DB"] = tmp_sqlite()
 
 first = run("import app", same_db_env)
 banner_ok = (
@@ -384,7 +397,7 @@ check("a second startup (admin already exists) prints no banner",
 # ---------------------------------------------------------------------------
 ESC = "\033["
 color_env = local_env(BOOTSTRAP_ADMIN_PASSWORD="")
-color_env["AUDIT_DB"] = tempfile.mktemp(suffix=".sqlite")
+color_env["AUDIT_DB"] = tmp_sqlite()
 del color_env["NO_COLOR"]   # DB_ENV sets it; this test is specifically about color being ON
 colored = run("import app", color_env)
 check("banner highlights the password in ANSI color by default",
@@ -394,7 +407,7 @@ if colored.returncode != 0:
     print(colored.stdout, colored.stderr)
 
 nocolor_env = local_env(BOOTSTRAP_ADMIN_PASSWORD="")
-nocolor_env["AUDIT_DB"] = tempfile.mktemp(suffix=".sqlite")
+nocolor_env["AUDIT_DB"] = tmp_sqlite()
 nocolor_env["NO_COLOR"] = "1"
 plain = run("import app", nocolor_env)
 check("banner has no ANSI codes when NO_COLOR is set",
@@ -413,7 +426,7 @@ if plain.returncode != 0:
 # of the time (8/8 runs) against the pre-fix code before this was added.
 # ---------------------------------------------------------------------------
 concurrent_env = local_env(BOOTSTRAP_ADMIN_PASSWORD="")
-concurrent_env["AUDIT_DB"] = tempfile.mktemp(suffix=".sqlite")
+concurrent_env["AUDIT_DB"] = tmp_sqlite()
 procs = [
     subprocess.Popen([sys.executable, "-c", "import app"], cwd=REPO,
                       env=concurrent_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -460,7 +473,7 @@ print('OK')
 # opposite.
 authentik_env = dict(DB_ENV)
 authentik_env.update({
-    "AUDIT_DB": tempfile.mktemp(suffix=".sqlite"),
+    "AUDIT_DB": tmp_sqlite(),
     "AUTH_MODE": "authentik",
     "SECRET_KEY": "test-secret",
     "BOOTSTRAP_ADMIN_USERNAME": "svc-admin",
@@ -618,8 +631,8 @@ assert resp.status_code == 200
 assert resp.mimetype == 'application/x-sqlite3'
 assert 'tak-extract-backup-' in resp.headers.get('Content-Disposition', '')
 
-import tempfile, sqlite3
-out_path = tempfile.mktemp(suffix='.sqlite')
+import tempfile, sqlite3, os
+out_path = os.path.join(tempfile.mkdtemp(), 'out.sqlite')
 with open(out_path, 'wb') as f:
     f.write(resp.data)
 
@@ -742,8 +755,8 @@ resp = c.post('/api/admin/restore', data={'backup': (io.BytesIO(b'not a database
 assert resp.status_code == 400 and 'not a valid sqlite' in resp.get_json()['error'], resp.get_json()
 
 # A real sqlite file, but not one of ours (no users/app_settings/export_log).
-import sqlite3, tempfile
-unrelated_path = tempfile.mktemp(suffix='.sqlite')
+import sqlite3, tempfile, os
+unrelated_path = os.path.join(tempfile.mkdtemp(), 'other.sqlite')
 con = sqlite3.connect(unrelated_path)
 con.execute('CREATE TABLE something_else (x int);')
 con.commit(); con.close()
@@ -1021,6 +1034,50 @@ if r.returncode != 0:
     print(r.stdout, r.stderr)
 
 # ---------------------------------------------------------------------------
+# The https redirect does not echo the Host header back
+# ---------------------------------------------------------------------------
+# Found by CodeQL (py/url-redirection) on the first scan after this repository
+# went public. request.url embeds the Host header, so the old one-liner
+# answered `Host: evil.example` with a redirect to https://evil.example - and
+# a cache in front of the app could then hand that to somebody else.
+r = run("""
+import app
+app.app.config['SERVER_NAME'] = None
+c = app.app.test_client()
+
+# A host this install expects: redirected to itself over https.
+good = c.get('/login', base_url='http://127.0.0.1:8080')
+assert good.status_code == 302, good.status_code
+assert good.headers['Location'].startswith('https://127.0.0.1:8080/login'), good.headers['Location']
+
+# A host it does not: must NOT appear in the redirect target.
+bad = c.get('/login', base_url='http://evil.example:8080')
+assert bad.status_code == 302, bad.status_code
+loc = bad.headers['Location']
+assert 'evil.example' not in loc, loc
+assert loc.startswith('https://'), loc
+assert loc.endswith('/login'), loc
+
+# A Host whose 'port' is not a port contributes nothing to the Location.
+# Sent as a raw header: the test client's base_url builder rejects a
+# malformed port before the app sees it, but a real client can send one.
+junk = c.get('/login', headers={'Host': 'evil.example:not-a-port'})
+jl = junk.headers['Location']
+assert 'evil.example' not in jl and 'not-a-port' not in jl, jl
+assert jl.startswith('https://127.0.0.1/login'), jl
+
+# The query string survives either way.
+q = c.get('/login?next=/verify', base_url='http://evil.example')
+assert 'evil.example' not in q.headers['Location'], q.headers['Location']
+assert q.headers['Location'].endswith('/login?next=/verify'), q.headers['Location']
+print('OK')
+""", local_env(SERVE_TLS="true", TLS_CERT_HOST="127.0.0.1"))
+check("https redirect never echoes an unexpected Host header back",
+      r.returncode == 0 and "OK" in r.stdout)
+if r.returncode != 0:
+    print(r.stdout, r.stderr)
+
+# ---------------------------------------------------------------------------
 # ProxyFix: trusts X-Forwarded-For only when SERVE_TLS is off (the assumed-
 # behind-a-reverse-proxy case) - without this, request.remote_addr (used by
 # the audit log, login lockout, and auth.log below) would always be the
@@ -1133,7 +1190,7 @@ if r.returncode != 0:
 # "not connected" nudge alongside its real one-time password banner.
 # ---------------------------------------------------------------------------
 env = local_env(BOOTSTRAP_ADMIN_PASSWORD="", DB_HOST="", DB_USER="")
-env["AUDIT_DB"] = tempfile.mktemp(suffix=".sqlite")
+env["AUDIT_DB"] = tmp_sqlite()
 r = run("import app", env)
 check("bootstrap banner: DB-not-connected nudge shown when DB_HOST/DB_USER are blank",
       r.returncode == 0 and "database isn't connected yet" in r.stdout
@@ -1142,7 +1199,7 @@ if r.returncode != 0:
     print(r.stdout, r.stderr)
 
 env = local_env(BOOTSTRAP_ADMIN_PASSWORD="")
-env["AUDIT_DB"] = tempfile.mktemp(suffix=".sqlite")
+env["AUDIT_DB"] = tmp_sqlite()
 r = run("import app", env)
 check("bootstrap banner: DB-not-connected nudge stays silent when DB_HOST/DB_USER are already set",
       r.returncode == 0 and "database isn't connected yet" not in r.stdout)

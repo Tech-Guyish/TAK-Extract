@@ -102,7 +102,7 @@ AUDIT_DB = os.getenv("AUDIT_DB", "audit.sqlite")
 # is the ONLY place the version is written - exports.build_package() takes
 # it as a required argument rather than defaulting to its own copy, which
 # is how the two were able to disagree in the first place.
-APP_VERSION = "TAK-Extract 1.21.1 (BETA)"
+APP_VERSION = "TAK-Extract 1.21.2 (BETA)"
 
 
 def _detect_commit():
@@ -149,6 +149,33 @@ TOOL_VERSION = APP_VERSION + (f" (commit {APP_COMMIT})" if APP_COMMIT else "")
 # only for app.py's own behavior (the redirect below, the dev-server
 # block, the bootstrap message's URL scheme).
 SERVE_TLS = os.getenv("SERVE_TLS", "false").strip().lower() in ("true", "1", "yes")
+
+
+def _tls_expected_hosts():
+    """The hostnames this install answers to when SERVE_TLS is on.
+
+    Derived the same way the certificate's own subject is (see the startup
+    banner and tls.py): TLS_CERT_HOST when set - which is what setup.sh
+    writes and what the cert is issued for - otherwise the detected LAN
+    address, which is meaningless inside a container. Loopback is always
+    valid for somebody working on the box itself."""
+    hosts = {"localhost", "127.0.0.1", "::1"}
+    configured = (os.getenv("TLS_CERT_HOST") or "").strip().lower()
+    if configured:
+        hosts.add(configured)
+    elif not running_in_container():
+        detected = (detect_local_ip() or "").strip().lower()
+        if detected:
+            hosts.add(detected)
+    return hosts
+
+
+TLS_EXPECTED_HOSTS = _tls_expected_hosts() if SERVE_TLS else set()
+# Where to send a request whose Host is none of the above. Never the host
+# that arrived - that is the whole point - and never empty.
+TLS_PREFERRED_HOST = ((os.getenv("TLS_CERT_HOST") or "").strip()
+                      or (sorted(TLS_EXPECTED_HOSTS - {"localhost", "127.0.0.1", "::1"}) or [""])[0]
+                      or "localhost") if SERVE_TLS else ""
 
 # request.remote_addr - used everywhere a real client IP matters (the
 # audit log, login lockout, the fail2ban-oriented auth log below) - would
@@ -319,7 +346,30 @@ def _force_https():
     permanent one - a 301 would have browsers cache it past the point
     SERVE_TLS might later be turned back off."""
     if SERVE_TLS and not request.is_secure:
-        return redirect(request.url.replace("http://", "https://", 1), code=302)
+        # Built from a host this install expects, not from the one that
+        # arrived. request.url embeds the Host header verbatim, so echoing
+        # it back answers a request claiming `Host: evil.example` with a
+        # redirect to https://evil.example/<same path>. Following that is
+        # the caller's own problem - but a cache in front of this app would
+        # key the redirect on the path and could then serve it to somebody
+        # else. SERVE_TLS is documented as the no-proxy case, which makes
+        # that unlikely; nothing in the code enforced it, and the host this
+        # install actually answers to is already known. An unrecognised Host
+        # is redirected to the expected one rather than refused, so a
+        # misconfigured-but-honest request still lands somewhere usable.
+        host = request.host or ""
+        bare = host.rsplit(":", 1)[0] if (":" in host and not host.endswith("]")) else host
+        if bare.strip("[]").lower() not in TLS_EXPECTED_HOSTS:
+            # Keep the port so the redirect stays reachable, but only if it
+            # really is one. It comes from the same untrusted header as the
+            # host, and there is no reason to carry an arbitrary fragment
+            # into a Location we are otherwise rebuilding from known values.
+            port = host.rsplit(":", 1)[1] if (":" in host and not host.endswith("]")) else ""
+            host = TLS_PREFERRED_HOST + (":" + port if port.isdigit() else "")
+        path = request.full_path
+        if path.endswith("?") and not request.query_string:
+            path = path[:-1]
+        return redirect("https://" + host + path, code=302)
 
 
 def _csp_nonce():
@@ -1180,13 +1230,19 @@ def require_role(*roles, api=False):
                     return jsonify({"error": "authentication required"}), 401
                 if AUTH_MODE == "local":
                     return redirect(url_for("login_page", next=request.path))
-                return Response("Access denied - no verified identity.", status=403)
+                return Response("Access denied - no verified identity.", status=403,
+                                mimetype="text/plain")
             if role not in roles:
                 msg = (f"{username} is signed in but has no role granting access "
                        f"to this page. Contact an admin.")
                 if api:
                     return jsonify({"error": msg}), 403
-                return Response(msg, status=403)
+                # text/plain, not Flask's default text/html: msg carries the
+                # username, and nothing validates what characters a username
+                # may hold - an admin creates them, and in authentik mode the
+                # proxy asserts them. Neither is a reason to render markup
+                # from one. Served as text, any markup in it is inert.
+                return Response(msg, status=403, mimetype="text/plain")
             g.username, g.role = username, role
             # Checked only after auth/role succeed, so an unauthenticated
             # or wrong-role caller still gets the same 401/403 as before -

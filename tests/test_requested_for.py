@@ -12,7 +12,9 @@ real install already has. Run with: python tests/test_requested_for.py
 """
 import os, sqlite3, sys, tempfile
 
-DB = tempfile.mktemp(suffix=".sqlite")
+# mkdtemp, not mktemp: mktemp returns a name without reserving it (see
+# tests/test_auth.py's tmp_sqlite for the whole reasoning).
+DB = os.path.join(tempfile.mkdtemp(), "audit.sqlite")
 
 # --- Simulate a PRE-EXISTING audit.sqlite from before this column existed.
 # This is the path that matters: a real install already has one of these.

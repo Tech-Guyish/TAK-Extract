@@ -44,6 +44,14 @@ env:
   # different conversation from a shipped function nothing calls.
   SHIPPED: app.py exports.py dbcheck.py kmz.py shapes.py tls.py
 
+# Read-only, explicitly. Without a permissions: block a workflow inherits
+# whatever the repository default is, which on many repositories is write
+# access to contents, packages and more - far beyond what a test or an
+# audit run needs, and a standing offer to anything that ever manages to
+# run inside the job. None of these three write anything.
+permissions:
+  contents: read
+
 jobs:
   dead-code:
     runs-on: ubuntu-latest
