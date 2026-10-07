@@ -5,8 +5,10 @@ at v0.4.0 — entries before that predate it and carry no version number.
 
 ---
 
-### Unreleased
+### v1.21.5 (BETA) — 2026-10-07
 
+- 🐛 `Bug Fix` - **The installer scripts are executable in a fresh clone.** `setup.sh`, `connect-database.sh` and `check-database.sh` were all committed `100644`, because this repository is authored on Windows where git does not record the execute bit. On Linux that makes `./setup.sh` answer *Permission denied* — and `sudo ./setup.sh` answer the far less helpful *command not found* — while the README names those exact commands in six places. They are committed `100755` now, a `.gitattributes` pins `*.sh` to LF endings so a CRLF copy can never reach a Linux host (where it dies on line one with a message that names no file), and both are asserted by the test suite so neither can quietly regress. Found on a real install.
+- 🐛 `Bug Fix` - **`connect-database.sh` says why it cannot see the container instead of guessing.** It ran `docker compose ps -q web 2>/dev/null`, which discarded every reason that command can fail and then reported the only one it knew how to describe: *the web container isn't running*. On a host where the account is not in the `docker` group that is simply untrue — the container is running and the daemon refused us — and the advice that followed sent a real user to re-run `setup.sh` against a healthy install. It now keeps Docker's own error and separates the three cases: Docker not installed, Docker refusing this account (with the `sudo` line to re-run, since every later command needs the same access), and a container that genuinely is not running.
 - 🔧 `Improvement` - **The four paired panels on the System page are the same size.** Each was sized to its own content, so Map and privacy, Audit log integrity, Check for updates and Appearance came out four different heights sitting next to each other. They stretch to match now, and the two rows are evened against each other as well, so all four match rather than only the pairs. Stacked in one column on a narrow screen they go back to their natural heights — padding every panel to the wordiest one is only wasted space on the screen with the least to spare.
 
 ---

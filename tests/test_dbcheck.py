@@ -289,6 +289,59 @@ shell = open(os.path.join(REPO, "connect-database.sh"), encoding="utf-8").read()
 block = shell[shell.index("grant_tables=\""):]
 block = block[len("grant_tables=\""):block.index("\"", len("grant_tables=\""))]
 installer_tables = tuple(sorted(block.split()))
+# ---------------------------------------------------------------------------
+# The installers have to be runnable from a fresh clone
+# ---------------------------------------------------------------------------
+# All three were committed 100644 because this repo is authored on Windows,
+# where core.filemode is false and the execute bit is never captured. A
+# fresh clone on Linux then answers "Permission denied" to the ./setup.sh
+# the README tells people to run - and `sudo ./setup.sh` reports the even
+# less helpful "command not found". Caught on a real install.
+import subprocess as _sp
+_modes = {}
+try:
+    _out = _sp.run(["git", "ls-files", "-s", "--", "*.sh"], cwd=REPO,
+                   capture_output=True, text=True, timeout=30)
+    for _line in _out.stdout.splitlines():
+        _mode, _rest = _line.split(" ", 1)
+        _modes[_rest.split(chr(9))[-1]] = _mode
+except Exception as _e:          # no git available - say so rather than pass
+    _modes = {"<git unavailable>": str(_e)}
+
+for _script in ("setup.sh", "connect-database.sh", "check-database.sh"):
+    check(f"{_script} is committed executable (100755), so a fresh clone can run it",
+          _modes.get(_script) == "100755")
+if any(v != "100755" for v in _modes.values()):
+    print(f"       modes: {_modes}")
+
+# Shell scripts must be stored with LF. A CRLF one dies on Linux with
+# "$'\r': command not found", which names no file and reads like a
+# corrupted install. The working copy here is CRLF (core.autocrlf), so this
+# checks what git actually STORES, not what is on disk.
+for _script in ("setup.sh", "connect-database.sh", "check-database.sh"):
+    try:
+        _blob = _sp.run(["git", "cat-file", "-p", ":" + _script], cwd=REPO,
+                        capture_output=True, timeout=30).stdout
+        _crlf = _blob.count(b"\r\n")
+    except Exception:
+        _crlf = -1
+    check(f"{_script} is stored with LF endings, not CRLF", _crlf == 0)
+
+# The one that sent a real user to re-run setup.sh against a healthy
+# install: `docker compose ps -q web 2>/dev/null` threw away the reason it
+# failed, so a daemon that refused us was reported as "the container isn't
+# running". Each branch must now name what actually happened.
+_cdb = open(os.path.join(REPO, "connect-database.sh"), encoding="utf-8").read()
+check("connect-database.sh keeps Docker's own error instead of discarding it",
+      'docker_err="$(docker compose ps -q web 2>&1 >/dev/null)"' in _cdb)
+check("connect-database.sh tells you to re-run with sudo when Docker refuses it",
+      "Cannot reach the Docker daemon" in _cdb and "sudo bash ./$(basename" in _cdb)
+check("connect-database.sh still reports a genuinely stopped container as such",
+      "The web container isn't running yet" in _cdb)
+check("connect-database.sh separates 'docker is absent' from the other two",
+      "docker isn't on PATH" in _cdb)
+
+
 check("connect-database.sh grants exactly the tables exports.GRANTED_TABLES names",
       installer_tables == tuple(sorted(exports.GRANTED_TABLES)))
 if installer_tables != tuple(sorted(exports.GRANTED_TABLES)):

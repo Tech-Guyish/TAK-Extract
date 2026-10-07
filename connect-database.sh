@@ -228,10 +228,40 @@ install_dir="$(pwd -P)"
 
 container_id=""
 if [ "$install_mode" = docker ]; then
+    # Keep stderr. This used to be `2>/dev/null || true`, which threw away
+    # every reason the lookup could fail and then reported the only one it
+    # knew how to say - "the container isn't running". On a host where the
+    # account is not in the `docker` group that is a flat lie: the container
+    # is running fine and the daemon simply refused us. It sent a real user
+    # off to re-run ./setup.sh against a healthy install. Say which it is.
+    docker_err="$(docker compose ps -q web 2>&1 >/dev/null)" || true
     container_id="$(docker compose ps -q web 2>/dev/null)" || true
     if [ -z "$container_id" ]; then
-        echo "The web container isn't running yet - run ./setup.sh (or"
-        echo "docker compose up -d --build) first, then re-run this script."
+        if ! command -v docker >/dev/null 2>&1; then
+            echo "docker isn't on PATH, so this .env's INSTALL_MODE=docker"
+            echo "cannot be what this host is actually running. Install Docker,"
+            echo "or correct INSTALL_MODE in .env if this is a side-by-side install."
+        elif printf '%s' "$docker_err" | grep -qiE 'permission denied|dial unix|docker daemon'; then
+            echo "Cannot reach the Docker daemon as $(id -un) - the container may well"
+            echo "be running; we simply cannot see it. Docker said:"
+            echo ""
+            printf '    %s\n' "$docker_err"
+            echo ""
+            echo "Re-run this script with sudo:"
+            echo ""
+            echo "    sudo bash ./$(basename "$0")"
+            echo ""
+            echo "(Every docker command below needs the same access, so re-running"
+            echo "with sudo is the fix rather than something to work around here.)"
+        else
+            echo "The web container isn't running yet - run ./setup.sh (or"
+            echo "docker compose up -d --build) first, then re-run this script."
+            if [ -n "$docker_err" ]; then
+                echo ""
+                echo "Docker also said:"
+                printf '    %s\n' "$docker_err"
+            fi
+        fi
         exit 1
     fi
 elif ! systemctl list-unit-files tak-extract.service >/dev/null 2>&1; then

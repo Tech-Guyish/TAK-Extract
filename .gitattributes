@@ -1,0 +1,10 @@
+# The shell scripts must reach a Linux host with LF endings. A CRLF one
+# fails on the first line with "$'\r': command not found" - a message that
+# names no file and reads like a corrupted download rather than a line
+# ending. This repo is authored on Windows, so without this the endings
+# depend on whatever core.autocrlf each contributor happens to have set.
+#
+# The committed execute bit matters for the same reason and is recorded in
+# the index (100755), not here - git has no attribute for it. Both are
+# asserted by tests/test_dbcheck.py so neither can quietly regress.
+*.sh text eol=lf

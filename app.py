@@ -102,7 +102,7 @@ AUDIT_DB = os.getenv("AUDIT_DB", "audit.sqlite")
 # is the ONLY place the version is written - exports.build_package() takes
 # it as a required argument rather than defaulting to its own copy, which
 # is how the two were able to disagree in the first place.
-APP_VERSION = "TAK-Extract 1.21.4 (BETA)"
+APP_VERSION = "TAK-Extract 1.21.5 (BETA)"
 
 
 def _detect_commit():
