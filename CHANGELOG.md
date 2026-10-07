@@ -5,6 +5,12 @@ at v0.4.0 — entries before that predate it and carry no version number.
 
 ---
 
+### Unreleased
+
+- 🔧 `Improvement` - **The four paired panels on the System page are the same size.** Each was sized to its own content, so Map and privacy, Audit log integrity, Check for updates and Appearance came out four different heights sitting next to each other. They stretch to match now, and the two rows are evened against each other as well, so all four match rather than only the pairs. Stacked in one column on a narrow screen they go back to their natural heights — padding every panel to the wordiest one is only wasted space on the screen with the least to spare.
+
+---
+
 ### v1.21.4 (BETA) — 2026-10-06
 
 - ✨ `New Feature` - **The maps can be told not to contact OpenStreetMap.** A **Map and privacy** panel on the System page holds two switches, both on by default, which is how every installation has worked up to now. **Address search** is the box in the map's corner: whatever is typed there goes to OpenStreetMap's public Nominatim service to be looked up, so a street name is an ordinary lookup but a case address typed into it has been handed to a third party and cannot be taken back. Off removes the box, removes the warning above the map, and stops the page fetching the search component at all — an installation that turns this off is not still asking a content network for the box it is not showing. **Map tiles** is the imagery itself: no case data is sent either way, but the pattern of those requests describes which area is being looked at, and off leaves the map blank while an area can still be drawn, its coordinates still read, and an export still run. The setting is site-wide rather than per-account and admin-only — it decides what leaves the network, which is not a personal preference the way the theme is — and either change is recorded in the audit log naming who made it. `MAP_SEARCH` and `MAP_TILES` in `.env` seed the values for an installation that must never reach OpenStreetMap even before an administrator has logged in; the panel's values win over them thereafter. The route accepts only real booleans: truthiness would have read a typo as *on*, which is the direction that turns a disclosure back on, and the audit entry would then have said an administrator asked for that.

@@ -117,8 +117,14 @@
            dropping back to one column when there is no room for two. The
            wide panels (Users' table, the re-check command, the structure
            report) stay full width: their content genuinely needs it. */
+        /* stretch, not start: each panel holds a different amount of text,
+           so sizing every one to its own content left four boxes of four
+           different heights sitting next to each other. grid-auto-rows
+           evens the two rows against each other as well, so all four
+           match rather than only the pairs. */
         .panelRow { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4);
-                    align-items: start; margin-top: var(--space-4); }
+                    align-items: stretch; grid-auto-rows: 1fr;
+                    margin-top: var(--space-4); }
         /* The gap does the separating inside the row; .panel's own
            margin-top would stack on top of it for the second row. */
         .panelRow > .panel { margin-top: 0; }
@@ -126,7 +132,11 @@
            ungrouped panels above and below it - so the gap goes and the
            panels get their own margin back. */
         @media (max-width: 900px) {
-            .panelRow { grid-template-columns: 1fr; gap: 0; margin-top: 0; }
+            /* grid-auto-rows goes too: stacked in one column it would make
+               every panel as tall as the wordiest, which is only padding on
+               a screen that has the least room to spare. */
+            .panelRow { grid-template-columns: 1fr; gap: 0; margin-top: 0;
+                        grid-auto-rows: auto; }
             .panelRow > .panel { margin-top: var(--space-4); }
         }
         .panel h2 { margin-top: 0; font-size: 16px; }
