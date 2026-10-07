@@ -1068,6 +1068,31 @@
     </div>
 
     <div class="step">
+        <h3>Map and privacy</h3>
+        <p>Two switches deciding what the maps on the Export and Verify pages are allowed to
+            contact. Both are on by default, which is how every installation has worked up to
+            now. The setting is site-wide, not per-account, and only an administrator can
+            change it.</p>
+        <p><strong>Address search</strong> is the box in the map&rsquo;s corner. Whatever is
+            typed into it goes to OpenStreetMap&rsquo;s public Nominatim service to be looked
+            up. A street name is an ordinary lookup; a case address typed into it has been
+            handed to a third party, and the operator cannot take it back. Turning it off
+            removes the box and the warning above the map, and the page stops fetching the
+            search component altogether &mdash; so an installation that turns this off is not
+            still asking a content network for the box it is not showing.</p>
+        <p><strong>Map tiles</strong> are the map imagery, fetched from OpenStreetMap as you
+            pan and zoom. No case data is sent either way, but the pattern of those requests
+            describes which area is being looked at. Turning it off leaves the map blank: you
+            can still draw an area, the <strong>Selected area</strong> panel still reports its
+            coordinates, and an export still runs &mdash; there is simply no geography
+            underneath. On the Verify page the same applies to playback: the tracks still
+            draw, over nothing. Only worth it if that trade is.</p>
+        <p>Either change is recorded in the audit log, naming who made it, because it changes
+            what this installation discloses. Pages already open keep what they were given
+            when they loaded &mdash; reload the Export or Verify page to see a change take.</p>
+    </div>
+
+    <div class="step">
         <h3>Audit log integrity</h3>
         <p><strong>Verify audit log chain</strong> recomputes every entry's hash from its stored
             content and checks each against the next: intact, or broken at a named entry with the

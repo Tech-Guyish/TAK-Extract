@@ -111,6 +111,24 @@
         .muted { color: var(--text-muted); }
         .panel { margin-top: var(--space-4); padding: var(--space-4); border: 1px solid var(--panel-border);
                  background: var(--panel-bg); }
+        /* Panels holding a button or a dropdown do not need the width of
+           the page - full-width boxes with one control in them made this
+           page far longer than its content. Paired side by side instead,
+           dropping back to one column when there is no room for two. The
+           wide panels (Users' table, the re-check command, the structure
+           report) stay full width: their content genuinely needs it. */
+        .panelRow { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4);
+                    align-items: start; margin-top: var(--space-4); }
+        /* The gap does the separating inside the row; .panel's own
+           margin-top would stack on top of it for the second row. */
+        .panelRow > .panel { margin-top: 0; }
+        /* Narrow: one column, which should read exactly like the
+           ungrouped panels above and below it - so the gap goes and the
+           panels get their own margin back. */
+        @media (max-width: 900px) {
+            .panelRow { grid-template-columns: 1fr; gap: 0; margin-top: 0; }
+            .panelRow > .panel { margin-top: var(--space-4); }
+        }
         .panel h2 { margin-top: 0; font-size: 16px; }
         table  { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: var(--space-3); }
         /* Five columns of real content can't fit a phone screen; the table
@@ -458,6 +476,32 @@
         <button type="button" class="copyBtn" id="recheckSetupCopy">Copy</button>
     </div>
 
+    <div class="panelRow">
+    <div class="panel">
+        <button type="button" class="infoBtn sectionAbout" data-target="mapAbout">ⓘ About</button>
+        <h2>Map and privacy</h2>
+        <p class="muted">What the maps on the Export and Verify pages may contact. Site-wide.</p>
+        <div class="infoBox" id="mapAbout" hidden>
+            <p>Both are on by default, which is how every install has worked so far.</p>
+            <p><strong>Address search</strong> sends whatever is typed into the box in the
+                map's corner to OpenStreetMap's public Nominatim service. A street name is a
+                lookup; a case address typed into it is a disclosure to a third party, and the
+                operator cannot take it back. Off removes the box entirely.</p>
+            <p><strong>Map tiles</strong> are fetched from OpenStreetMap as you pan and zoom.
+                No case data is sent, but the pattern of requests describes which area is being
+                looked at. Off leaves the map blank - you can still draw an area and the
+                <strong>Selected area</strong> panel still reports its coordinates, but there is
+                no geography under it, so only turn this off if that trade is worth it.</p>
+            <p>Changing either is recorded in the audit log: it changes what this install
+                discloses, so who changed it belongs on the record.</p>
+        </div>
+        <div class="addUserForm">
+            <label><input type="checkbox" id="mapSearchToggle"> Address search</label>
+            <label><input type="checkbox" id="mapTilesToggle"> Map tiles</label>
+            <button type="button" id="saveMapBtn">Save</button>
+            <span class="resultMsg" id="mapMsg"></span>
+        </div>
+    </div>
     <div class="panel">
         <button type="button" class="infoBtn sectionAbout" data-target="chainAbout">ⓘ About</button>
         <h2>Audit log integrity</h2>
@@ -498,6 +542,7 @@
             <button type="button" id="saveThemeBtn">Save</button>
             <span class="resultMsg" id="themeMsg"></span>
         </div>
+    </div>
     </div>
 
         </div>
@@ -662,7 +707,11 @@
             if (d.last) {
                 var when = String(d.last.ts_local || d.last.ts_utc).slice(0, 16);
                 var host = d.last.where ? d.last.where.split(':')[0] : '';
-                parts.push('last re-check ' + when + (host ? ' from ' + host : '') + ' - ' + d.last.outcome);
+                // 'last re-check' read as something that had just
+                // happened; it is the newest one in the log, which may
+                // be months old. Say which.
+                parts.push('newest re-check on record ' + when +
+                           (host ? ' from ' + host : '') + ' - ' + d.last.outcome);
             }
             if (parts.length) {
                 el.className = 'connStatus ok';
@@ -1071,8 +1120,49 @@
             copyToClipboard(text, e.target);
         });
 
+        // ---------------------------------------------------------------
+        // Map and privacy (site-wide, not per-account - see
+        // /api/admin/map-settings)
+        // ---------------------------------------------------------------
+        function loadMapSettings() {
+            return fetch('/api/admin/map-settings')
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    document.getElementById('mapSearchToggle').checked = !!d.search;
+                    document.getElementById('mapTilesToggle').checked = !!d.tiles;
+                })
+                .catch(function (e) {
+                    showMsg(document.getElementById('mapMsg'), false,
+                            'Could not read the current setting: ' + e);
+                });
+        }
+
+        document.getElementById('saveMapBtn').addEventListener('click', function () {
+            var msg = document.getElementById('mapMsg');
+            var btn = this;
+            btn.disabled = true;
+            msg.textContent = '';
+            fetch('/api/admin/map-settings', {
+                method: 'POST',
+                headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+                body: JSON.stringify({
+                    search: document.getElementById('mapSearchToggle').checked,
+                    tiles: document.getElementById('mapTilesToggle').checked
+                })
+            }).then(function (r) { return r.json(); }).then(function (d) {
+                if (d.error) { showMsg(msg, false, d.error); return; }
+                // The Export and Verify pages are told this when they render,
+                // so a tab already open keeps what it was given. Say so
+                // rather than leave it looking like the save did not take.
+                showMsg(msg, true, 'Saved. Reload the Export or Verify page to see it.');
+            }).catch(function (e) {
+                showMsg(msg, false, String(e));
+            }).finally(function () { btn.disabled = false; });
+        });
+
         loadTheme();
         loadUsers();
+        loadMapSettings();
         loadSettings().then(refreshConnStatus);
     </script>
 </body>

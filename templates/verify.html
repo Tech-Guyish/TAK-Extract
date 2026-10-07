@@ -681,10 +681,12 @@
         // people stay on top and clickable no matter how shapes overlap.
         map.createPane('shapesPane');
         map.getPane('shapesPane').style.zIndex = 350;
+        {% if map_opts.tiles %}
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; OpenStreetMap contributors',
             maxZoom: 19,
         }).addTo(map);
+        {% endif %}
         // Geographic centre of the contiguous US, zoomed out to the whole
         // country - a neutral placeholder until the dropped package's own
         // fitBounds() below lands on wherever its records actually are.

@@ -22,9 +22,15 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"
           integrity="sha384-NZLkVuBRMEeB4VeZz27WwTRvlhec30biQ8Xx7zG7JJnkvEKRg5qi6BNbEXo9ydwv"
           crossorigin="anonymous"/>
+    {# With the address search off there is no geocoder control to style,
+       so do not fetch its stylesheet either - an install that turned the
+       search off to stop reaching third parties should not still be
+       asking a CDN for the search box it is not showing. #}
+    {% if map_opts.search %}
     <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder@2.4.0/dist/Control.Geocoder.css"
           integrity="sha384-gOibXC9S5JpMrpEP0ee6wCSVHjFSEuOzLLzTUmg58qM+mJ1rI8h/aY3lS9YUmo55"
           crossorigin="anonymous"/>
+    {% endif %}
     <style>
         /* Without this, an element with width:100% plus a border or padding
            renders WIDER than its container (padding/border get added on top
@@ -449,8 +455,10 @@
         </div>
     </div>
     <div class="pageBody">
+    {% if map_opts.search %}
     <p class="mapWarn">⚠ The search box in the map's corner sends whatever you
         type to OpenStreetMap's public Nominatim service for lookup.</p>
+    {% endif %}
 
     <div id="map"></div>
     <p class="muted mapNote">Draw a rectangle on the map, set a time window, then check
@@ -642,9 +650,13 @@ Map objects        : 0</div>
     <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"
             integrity="sha384-JP5UPxIO2Tm2o79Fb0tGYMa44jkWar53aBoCbd8ah0+LcCDoohTIYr+zIXyfGIJN"
             crossorigin="anonymous"></script>
+    {# Same reasoning as the stylesheet above: nothing calls
+       L.Control.geocoder() when the search is off. #}
+    {% if map_opts.search %}
     <script src="https://unpkg.com/leaflet-control-geocoder@2.4.0/dist/Control.Geocoder.js"
             integrity="sha384-rGCFEOuLo3qUtZTJs5enHPutiikUQ6AJroPg2rQqOhmXBPmZdvhwK2aCmkhe9gwo"
             crossorigin="anonymous"></script>
+    {% endif %}
     <script nonce="{{ csp_nonce() }}">
         // Empty in authentik mode (nothing to check there) - csrfHeaders()
         // just sends an empty string in that case, which the server never
@@ -677,11 +689,19 @@ Map objects        : 0</div>
         // before the real fitBounds() lands, which reads as a bug.
         var map = L.map('map').setView([39.8, -98.5], 4);
 
+        {% if map_opts.tiles %}
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: '&copy; OpenStreetMap contributors'
         }).addTo(map);
+        {% else %}
+        // Map tiles are switched off for this install (System -> Map and
+        // privacy). The map still draws and reports coordinates; it simply
+        // has no basemap under it, because each tile is a request naming
+        // the area being looked at.
+        {% endif %}
 
+        {% if map_opts.search %}
         // Address/place search. Nominatim is the plugin's default geocoder -
         // free, no API key, but a public third-party service: whatever's
         // typed here is sent to OpenStreetMap to look up (see the note under
@@ -701,6 +721,7 @@ Map objects        : 0</div>
         }).on('markgeocode', function (e) {
             map.fitBounds(e.geocode.bbox);
         }).addTo(map);
+        {% endif %}
 
         // Faint, non-interactive device-motion lines and drawn-shape
         // outlines - a visual reference so an operator drawing the box below

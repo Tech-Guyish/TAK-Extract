@@ -102,7 +102,7 @@ AUDIT_DB = os.getenv("AUDIT_DB", "audit.sqlite")
 # is the ONLY place the version is written - exports.build_package() takes
 # it as a required argument rather than defaulting to its own copy, which
 # is how the two were able to disagree in the first place.
-APP_VERSION = "TAK-Extract 1.21.3 (BETA)"
+APP_VERSION = "TAK-Extract 1.21.4 (BETA)"
 
 
 def _detect_commit():
@@ -332,6 +332,42 @@ CSP_TEMPLATE = (
     "frame-ancestors 'none';"
 )
 
+# The two sources above that leave the network, and what turns each off.
+# With a map setting off, the template stops rendering the thing that
+# would have made the request - and this takes the permission away too,
+# so the browser refuses it rather than relying on the markup being the
+# only route to it. Only the Export and Verify pages draw a map and only
+# they set g.map_opts (see index/verify_page), so every other response
+# keeps the policy exactly as before.
+# Both tile hostname forms belong to "tiles": index.html uses the bare
+# host and verify.html the older sharded one (see the img-src note
+# above), so turning tiles off has to withdraw both.
+CSP_MAP_SOURCES = {
+    "tiles": ("https://tile.openstreetmap.org",
+              "https://*.tile.openstreetmap.org"),
+    "search": ("https://nominatim.openstreetmap.org",),
+}
+
+
+def csp_header():
+    """The policy for THIS response, with any map source the install has
+    switched off removed from it."""
+    policy = CSP_TEMPLATE.format(nonce=_csp_nonce())
+    # after_request only ever runs inside a request, so g is always
+    # available here; a page that drew no map simply never set this.
+    opts = g.get("map_opts")
+    if not opts:
+        return policy
+    for field, sources in CSP_MAP_SOURCES.items():
+        if opts.get(field):
+            continue
+        for source in sources:
+            # Each appears once, with a single space either side of it in
+            # the template above; dropping the leading space keeps the
+            # directive from ending up with a double one.
+            policy = policy.replace(" " + source, "")
+    return policy
+
 
 @app.before_request
 def _force_https():
@@ -386,7 +422,7 @@ def set_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Content-Security-Policy"] = CSP_TEMPLATE.format(nonce=_csp_nonce())
+    response.headers["Content-Security-Policy"] = csp_header()
     # This app doesn't use any of these browser features itself, and
     # denying them outright means an embedded/framed context (already
     # blocked by frame-ancestors 'none' above, but defense in depth) can't
@@ -443,6 +479,28 @@ def get_setting(key, env_fallback=None, default=None):
         return row[0]
     env_val = os.getenv(env_fallback) if env_fallback else None
     return env_val if env_val not in (None, "") else default
+
+
+def map_options():
+    """What the map may contact, for the two pages that draw one.
+
+    Both default ON, which is what every install has done until now - this
+    turns a documented caveat into a switch rather than changing anybody's
+    behaviour. Off matters for a network where a request leaving the agency
+    is the problem, not the latency:
+
+    - search: whatever an operator types goes to OpenStreetMap's public
+      Nominatim service. "123 Main St" is a lookup; a case address typed
+      into it is a disclosure, and the operator cannot take it back.
+    - tiles: each one is a request naming the area being looked at, so the
+      pattern of them describes where an investigation is pointed even
+      though no case data is sent. Off leaves the map blank but still
+      drawable - the Selected area panel reports the coordinates either way.
+    """
+    return {
+        "search": get_setting("map_search", "MAP_SEARCH", "true") == "true",
+        "tiles": get_setting("map_tiles", "MAP_TILES", "true") == "true",
+    }
 
 
 def set_setting(key, value):
@@ -1437,8 +1495,11 @@ def available_channels(conn, p):
 @app.route("/")
 @require_role("admin")
 def index():
+    # Kept on g so csp_header() can narrow the policy to whatever
+    # this page was actually built with, without reading it twice.
+    g.map_opts = map_options()
     return render_template("index.html", role=g.role, username=g.username, auth_mode=AUTH_MODE,
-                            theme=get_theme())
+                            theme=get_theme(), map_opts=g.map_opts)
 
 @app.route("/audit")
 @require_role("admin")
@@ -1449,8 +1510,11 @@ def audit_page():
 @app.route("/verify")
 @require_role("admin", "viewer")
 def verify_page():
+    # Kept on g so csp_header() can narrow the policy to whatever
+    # this page was actually built with, without reading it twice.
+    g.map_opts = map_options()
     return render_template("verify.html", role=g.role, username=g.username, auth_mode=AUTH_MODE,
-                            theme=get_theme())
+                            theme=get_theme(), map_opts=g.map_opts)
 
 
 @app.route("/admin")
@@ -3806,6 +3870,45 @@ def theme_setting():
     con.commit()
     con.close()
     return jsonify({"ok": True})
+
+
+@app.route("/api/admin/map-settings", methods=["GET", "POST"])
+@require_role("admin", api=True)
+def map_settings():
+    """Whether the maps may contact OpenStreetMap - see map_options().
+
+    Site-wide, not per-account, and admin-only: this decides what leaves
+    the network, which is not a personal preference the way the theme is.
+    Audited for the same reason - turning the search back on is a change to
+    what this install discloses, and the log should hold who did it."""
+    if request.method == "GET":
+        return jsonify(map_options())
+
+    data = request.get_json() or {}
+    before = map_options()
+
+    # Only a real boolean counts. Python truthiness would read a typo or a
+    # stray string as ON, which is the direction that turns a disclosure
+    # back on - and the audit row would then say an admin asked for that
+    # when they did not. Refuse instead of guessing.
+    wanted = {}
+    for key, field in (("map_search", "search"), ("map_tiles", "tiles")):
+        if field not in data:
+            continue
+        value = data[field]
+        if not isinstance(value, bool):
+            return jsonify({"error": f"{field} must be true or false, "
+                                     f"not {type(value).__name__}"}), 400
+        wanted[key] = value
+    for key, value in wanted.items():
+        set_setting(key, "true" if value else "false")
+    after = map_options()
+    if after != before:
+        changed = ", ".join(
+            f"{k} {'on' if after[k] else 'off'}" for k in after if after[k] != before[k])
+        audit(f"authenticated: {g.username}", request.remote_addr, {},
+              "admin-map-settings", 0, "ok", detail=f"map: {changed}")
+    return jsonify(after)
 
 
 @app.route("/api/admin/test-connection", methods=["POST"])

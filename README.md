@@ -59,7 +59,7 @@ The three scripts at the top are the only things an administrator runs by hand; 
 - **Which database an export came from** — every export records the source database's own identity, so a package can be told apart from one produced against a different server and the System page can say whether the connection still points where recent exports were read from. Where the read-only account has been granted `EXECUTE` on `pg_control_system()` (offered by `connect-database.sh`) that is the cluster's identifier, fixed when the cluster was created; otherwise a weaker catalog fingerprint, which the package says it used and why. A difference is not in itself a sign that anything is wrong — a rebuilt or restored cluster reports a new identifier while holding the same data
 - **User Guide** — built in, per role, with screenshots from synthetic data; includes a reference grid of what each file carries and a section on using an export as evidence
 - **Audit Log** — every export request ever made: who, when, what was asked for, and the outcome — searchable, sortable, and itself exportable; hash-chained, so a later edit, deletion or insertion is detectable (verified from the System page or from the downloaded log)
-- **System** — users and roles, TAK Server connection settings, database backup/restore, per-account display preferences, and a read-only check against GitHub for available updates (shows the commands to run — never applies anything on its own)
+- **System** — users and roles, TAK Server connection settings, database backup/restore, what the maps are allowed to contact, per-account display preferences, and a read-only check against GitHub for available updates (shows the commands to run — never applies anything on its own)
 
 ---
 
@@ -422,6 +422,8 @@ Everything lives in `.env` (see `.env.example` for the full, commented list). Th
 - **`AUTH_MODE`** — `local` runs this app's own login form and session; `authentik` trusts an `X-authentik-username` header set by a reverse proxy in front of it, and skips local login entirely. With a forward-auth proxy, pass `/recheck/` through **without** authentication: the TAK Server's re-check line fetches a script and posts a hash file there, authenticated by a per-package token rather than a login, and it cannot answer a sign-in page
 - **`DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD`** — TAK Server's Postgres connection. These only seed the very first startup; once an admin saves connection settings from the **System** page, those take over
 
+- **`MAP_SEARCH` / `MAP_TILES`** — whether the Export and Verify maps may reach OpenStreetMap: the address-search box sends what is typed into it to the public Nominatim service, and the tiles are fetched as you pan. Both default to on. Like the database settings these only seed the first startup — the **Map and privacy** panel on the **System** page takes over once an administrator saves there, and records the change in the audit log. Set them here for an installation that must never reach OpenStreetMap even before anyone has logged in
+
 Everything else (session timeout, failed-login lockout, CSRF, minimum password length) is on by default in `local` mode and needs no configuration.
 
 ### Direct TLS (optional)
@@ -595,7 +597,7 @@ It makes no claim about any compliance regime. **Which regimes a deployment fall
 
 ### What it does not do
 
-- **No telemetry.** It never contacts anything but the TAK Server database you point it at and the map tile provider the browser loads. It does not phone home, check in, or report usage anywhere.
+- **No telemetry.** It never contacts anything but the TAK Server database you point it at and, from the browser, OpenStreetMap — for the map imagery, and for whatever is typed into the map's address-search box, which is sent there to be looked up. Both can be turned off from the **System** page, or before first login with `MAP_TILES` and `MAP_SEARCH` in `.env`. It does not phone home, check in, or report usage anywhere.
 - **It never writes to TAK Server.** The database account it uses has `SELECT` and nothing else, in a `READ ONLY` transaction, and the package README prints the account's write privileges as the database itself reports them.
 - **Location data never leaves your machine on the Verify page.** Files dropped there are read and hashed in the browser; only a 64-character hash is sent, to look up in the audit log.
 

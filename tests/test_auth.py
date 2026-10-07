@@ -1843,6 +1843,129 @@ check("case corrections: a viewer cannot record one", r.returncode == 0 and "OK"
 if r.returncode != 0:
     print(r.stdout, r.stderr)
 
+# ---------------------------------------------------------------------------
+# Local mode: the map privacy setting
+# ---------------------------------------------------------------------------
+# MAP_SEARCH/MAP_TILES decide whether the Export and Verify pages reach
+# OpenStreetMap at all. The pages are told at render time, so the test that
+# matters is what the HTML contains - not what the route reports back.
+r = run("""
+import app
+c = app.app.test_client()
+login(c, data={'username': 'admin', 'password': 'adminpass12345'})
+import re
+tok = re.search('name="csrf-token" content="([^"]+)"',
+                c.get('/admin').data.decode()).group(1)
+H = {'X-CSRFToken': tok}
+
+def settings():
+    return c.get('/api/admin/map-settings').get_json()
+
+def pages():
+    i, v = c.get('/').data.decode(), c.get('/verify').data.decode()
+    return {
+        # The control itself, the library it needs, and the warning that
+        # names the third party - all three must go together.
+        'control': 'L.Control.geocoder(' in i,
+        'library': 'Control.Geocoder.js' in i,
+        'warning': 'public Nominatim service for lookup' in i,
+        'tiles': 'tile.openstreetmap.org' in i,
+        'verify_tiles': 'tile.openstreetmap.org' in v,
+    }
+
+# Default is on, which is how every install has behaved up to now.
+assert settings() == {'search': True, 'tiles': True}, settings()
+
+for search in (True, False):
+    for tiles in (True, False):
+        assert c.post('/api/admin/map-settings',
+                      json={'search': search, 'tiles': tiles},
+                      headers=H).status_code == 200
+        assert settings() == {'search': search, 'tiles': tiles}
+        got = pages()
+        want = {'control': search, 'library': search, 'warning': search,
+                'tiles': tiles, 'verify_tiles': tiles}
+        assert got == want, (search, tiles, got)
+        # Off also withdraws the permission, so the browser refuses the
+        # request rather than the markup being the only thing stopping it.
+        for path in ('/', '/verify'):
+            csp = c.get(path).headers['Content-Security-Policy']
+            assert ('tile.openstreetmap.org' in csp) is tiles, (path, csp)
+            assert ('nominatim' in csp) is search, (path, csp)
+            assert '  ' not in csp, csp
+        # A page that draws no map keeps the policy it always had.
+        csp = c.get('/admin').headers['Content-Security-Policy']
+        assert 'tile.openstreetmap.org' in csp and 'nominatim' in csp, csp
+
+# Only a real boolean counts. Truthiness would read a typo as ON, which is
+# the direction that turns a disclosure back on, and the audit row would
+# then say an admin asked for that.
+c.post('/api/admin/map-settings', json={'search': True, 'tiles': True}, headers=H)
+for junk in ({'search': 'banana'}, {'search': 'true'}, {'search': 1},
+             {'tiles': None}, {'tiles': []}):
+    assert c.post('/api/admin/map-settings', json=junk,
+                  headers=H).status_code == 400, junk
+    assert settings() == {'search': True, 'tiles': True}, junk
+
+# A payload naming one field leaves the other alone.
+c.post('/api/admin/map-settings', json={'search': False}, headers=H)
+assert settings() == {'search': False, 'tiles': True}, settings()
+
+# Changing it is on the record; re-saving the same values is not a change
+# and must not manufacture an entry.
+import sqlite3
+con = sqlite3.connect(app.AUDIT_DB)
+q = ("SELECT count(*) FROM export_log WHERE export_kind = 'admin-map-settings'"
+     " AND detail LIKE 'map:%'")
+before = con.execute(q).fetchone()[0]
+assert before > 0, 'no map change was recorded'
+c.post('/api/admin/map-settings', json={'search': False, 'tiles': True}, headers=H)
+assert con.execute(q).fetchone()[0] == before, 'a no-op save wrote an entry'
+c.post('/api/admin/map-settings', json={'search': True}, headers=H)
+assert con.execute(q).fetchone()[0] == before + 1
+detail = con.execute("SELECT actor, detail FROM export_log WHERE export_kind ="
+                     " 'admin-map-settings' ORDER BY id DESC LIMIT 1").fetchone()
+assert detail[0] == 'authenticated: admin', detail
+assert detail[1] == 'map: search on', detail
+con.close()
+assert app.verify_audit_chain()['ok'] is True, 'chain broke'
+
+# No CSRF header -> refused, like every other write.
+assert c.post('/api/admin/map-settings', json={'search': False}).status_code == 403
+print('OK')
+""", local_env())
+check("map privacy: both default on; each combination changes what the Export "
+      "and Verify pages contain AND what the CSP permits; only booleans "
+      "accepted; a change is recorded and a no-op is not; CSRF enforced",
+      r.returncode == 0 and "OK" in r.stdout)
+if r.returncode != 0:
+    print(r.stdout, r.stderr)
+
+# The Export page is admin-only, but a viewer uses Verify - whose map is
+# governed by the same setting. They must be able to read that page and
+# still not be able to change what the install discloses.
+r = run("""
+import app, sqlite3
+from werkzeug.security import generate_password_hash
+con = sqlite3.connect(app.AUDIT_DB)
+con.execute("INSERT INTO users (username, password_hash, role, created_ts_utc)"
+            " VALUES (?,?,?,?);",
+            ('v.user', generate_password_hash('viewerpass12345'), 'viewer',
+             '2026-01-01T00:00:00+00:00'))
+con.commit(); con.close()
+c = app.app.test_client()
+login(c, data={'username': 'v.user', 'password': 'viewerpass12345'})
+assert c.get('/verify').status_code == 200, 'a viewer still uses the Verify page'
+assert c.get('/api/admin/map-settings').status_code in (401, 403)
+r = c.post('/api/admin/map-settings', json={'search': False})
+assert r.status_code in (401, 403), (r.status_code, r.get_json())
+print('OK')
+""", local_env())
+check("map privacy: a viewer cannot change it", r.returncode == 0 and "OK" in r.stdout)
+if r.returncode != 0:
+    print(r.stdout, r.stderr)
+
+
 print()
 if failures:
     print(f"{len(failures)} FAILURE(S):")
