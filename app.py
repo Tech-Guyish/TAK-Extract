@@ -150,6 +150,24 @@ TOOL_VERSION = APP_VERSION + (f" (commit {APP_COMMIT})" if APP_COMMIT else "")
 # block, the bootstrap message's URL scheme).
 SERVE_TLS = os.getenv("SERVE_TLS", "false").strip().lower() in ("true", "1", "yes")
 
+# The port this process actually listens on, in ONE place, because the
+# two had drifted: the startup banner printed PORT (default 8080) while
+# `python app.py` was hardcoded to 5000, so running the dev server with
+# PORT set announced a URL nothing was listening on.
+#
+# The banner prints at import time, below, before the __main__ block at
+# the bottom runs - so it cannot be told which of the two is starting.
+# It works it out instead: when this file is run directly its module
+# name is already "__main__" by the time this line executes, and under
+# gunicorn (both install shapes) it is "app".
+#
+# The dev server deliberately does NOT read PORT: README's quick start
+# says to copy .env.example, which carries PORT=8080, and that would
+# silently move `python app.py` off the 5000 the same page tells you to
+# open. PORT stays what it has always been - the served install's port.
+DEV_SERVER = __name__ == "__main__"
+LISTEN_PORT = "5000" if DEV_SERVER else (os.getenv("PORT") or "8080")
+
 
 def _tls_expected_hosts():
     """The hostnames this install answers to when SERVE_TLS is on.
@@ -944,7 +962,7 @@ def bootstrap_admin():
     if os.getenv("TAKX_NO_BANNER") and not generated_pw:
         return
 
-    port = os.getenv("PORT") or "8080"
+    port = LISTEN_PORT
     scheme = "https" if SERVE_TLS else "http"
     print("", flush=True)
     print("=" * 70, flush=True)
@@ -2828,7 +2846,7 @@ def record_companion():
     case_id = detail_safe(data.get("case_id"))
     detail = (f"companion {filename} for package {pkg or '(package hash unavailable)'}; "
               f"{matched} of {total} package positions matched it")
-    audit(g.username, request.remote_addr, {"case_id": case_id}, "companion", matched, "recorded",
+    audit(identify({}), request.remote_addr, {"case_id": case_id}, "companion", matched, "recorded",
           package_hash=comp, detail=detail)
     return jsonify({"ok": True})
 
@@ -3269,7 +3287,7 @@ def correct_case():
         detail += f"; reason: {reason}"
     # case_id is the CORRECTED name, so the correction sits with the case
     # it puts right rather than with the name that was wrong.
-    audit(g.username, request.remote_addr, {"case_id": new_case}, "case-correction",
+    audit(identify({}), request.remote_addr, {"case_id": new_case}, "case-correction",
           affected, "recorded", detail=detail)
     return jsonify({"ok": True, "corrected": affected, "from": old, "to": new_case})
 
@@ -3746,7 +3764,7 @@ def admin_users():
     con.commit()
     con.close()
 
-    audit(g.username, request.remote_addr, {}, kind, 0, "ok", detail=detail)
+    audit(identify({}), request.remote_addr, {}, kind, 0, "ok", detail=detail)
     return jsonify({"ok": True})
 
 
@@ -3775,7 +3793,7 @@ def admin_delete_user(user_id):
     con.execute("DELETE FROM users WHERE id = ?;", (user_id,))
     con.commit()
     con.close()
-    audit(g.username, request.remote_addr, {}, "admin-user-delete", 0, "ok",
+    audit(identify({}), request.remote_addr, {}, "admin-user-delete", 0, "ok",
           detail=f"deleted {username} (was {role})")
     return jsonify({"ok": True})
 
@@ -3805,7 +3823,7 @@ def admin_reset_password(user_id):
     )
     con.commit()
     con.close()
-    audit(g.username, request.remote_addr, {}, "admin-password-reset", 0, "ok",
+    audit(identify({}), request.remote_addr, {}, "admin-password-reset", 0, "ok",
           detail=f"password reset for {row[0]}")
     return jsonify({"ok": True})
 
@@ -3845,7 +3863,7 @@ def admin_settings():
         changed.append("db_password (value not logged)")
 
     if changed:
-        audit(g.username, request.remote_addr, {}, "admin-settings-change", 0, "ok",
+        audit(identify({}), request.remote_addr, {}, "admin-settings-change", 0, "ok",
               detail="changed: " + ", ".join(changed))
     return jsonify({"ok": True})
 
@@ -3906,7 +3924,7 @@ def map_settings():
     if after != before:
         changed = ", ".join(
             f"{k} {'on' if after[k] else 'off'}" for k in after if after[k] != before[k])
-        audit(f"authenticated: {g.username}", request.remote_addr, {},
+        audit(identify({}), request.remote_addr, {},
               "admin-map-settings", 0, "ok", detail=f"map: {changed}")
     return jsonify(after)
 
@@ -4194,7 +4212,7 @@ def admin_backup():
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     filename = f"tak-extract-backup-{stamp}.sqlite"
-    audit(g.username, request.remote_addr, {}, "admin-backup-download", 0, "ok",
+    audit(identify({}), request.remote_addr, {}, "admin-backup-download", 0, "ok",
           detail=f"backup downloaded: {filename}")
 
     return Response(
@@ -4254,7 +4272,7 @@ def admin_restore():
             "error": f"restore failed and was rolled back: {type(e).__name__}: {e}"
         }), 500
 
-    audit(g.username, request.remote_addr, {}, "admin-restore", 0, "ok",
+    audit(identify({}), request.remote_addr, {}, "admin-restore", 0, "ok",
           detail=f"restored from uploaded backup: {detail_safe(uploaded.filename)}")
     os.remove(safety_path)
     return jsonify({"ok": True})
@@ -4285,6 +4303,7 @@ if __name__ == "__main__":
         _cert = os.getenv("TLS_CERT_FILE") or os.path.join(_tls_dir, "tls_cert.pem")
         _key = os.getenv("TLS_KEY_FILE") or os.path.join(_tls_dir, "tls_key.pem")
         ensure_self_signed_cert(_cert, _key, detect_local_ip())
-        app.run(debug=_debug, port=5000, host="0.0.0.0", ssl_context=(_cert, _key))
+        app.run(debug=_debug, port=int(LISTEN_PORT), host="0.0.0.0",
+                ssl_context=(_cert, _key))
     else:
-        app.run(debug=_debug, port=5000)
+        app.run(debug=_debug, port=int(LISTEN_PORT))

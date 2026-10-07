@@ -1966,6 +1966,130 @@ if r.returncode != 0:
     print(r.stdout, r.stderr)
 
 
+# ---------------------------------------------------------------------------
+# Local mode: an admin action records a VERIFIED actor
+# ---------------------------------------------------------------------------
+# audit.html's whoClass() treats any actor not starting "authenticated:" as
+# unidentified - the distinction between a verified session and a name typed
+# into a box. Eight admin routes passed a bare g.username, so a real admin
+# session was logged in the shape reserved for an unverified claim. They go
+# through identify() now, which is the one definition of how an actor is
+# written; this test is here so they cannot drift apart again.
+r = run("""
+import app, os, re, sqlite3
+c = app.app.test_client()
+login(c, data={'username': 'admin', 'password': 'adminpass12345'})
+H = {'X-CSRFToken': re.search('name="csrf-token" content="([^"]+)"',
+                              c.get('/admin').data.decode()).group(1)}
+
+c.post('/api/admin/users', json={'username': 'v.user',
+       'password': 'viewerpass12345', 'role': 'viewer'}, headers=H)
+c.post('/api/admin/users', json={'username': 'v.user',
+       'password': 'viewerpass12345', 'role': 'admin'}, headers=H)
+con = sqlite3.connect(app.AUDIT_DB)
+uid = con.execute("SELECT id FROM users WHERE username='v.user'").fetchone()[0]
+con.close()
+c.post('/api/admin/users/%d/reset-password' % uid,
+       json={'password': 'anotherpass12345'}, headers=H)
+c.post('/api/admin/users/%d/delete' % uid, headers=H)
+c.post('/api/admin/settings', json={'db_host': 'somewhere'}, headers=H)
+c.post('/api/admin/map-settings', json={'search': False}, headers=H)
+c.get('/api/admin/backup', headers=H)
+c.post('/api/audit/download', json={}, headers=H)
+
+con = sqlite3.connect(app.AUDIT_DB)
+rows = con.execute('SELECT export_kind, actor FROM export_log ORDER BY id').fetchall()
+con.close()
+kinds = {k for k, _ in rows}
+# If a route stopped writing its entry the test would pass vacuously.
+for expected in ('admin-user-add', 'admin-role-change', 'admin-password-reset',
+                 'admin-user-delete', 'admin-settings-change',
+                 'admin-map-settings', 'admin-backup-download', 'audit-download'):
+    assert expected in kinds, (expected, sorted(kinds))
+bad = [(k, a) for k, a in rows if not (a or '').startswith('authenticated:')]
+assert not bad, bad
+assert app.verify_audit_chain()['ok'] is True
+print('OK')
+""", local_env())
+check("every admin action records a verified actor, in the form the audit page "
+      "reads as verified", r.returncode == 0 and "OK" in r.stdout)
+if r.returncode != 0:
+    print(r.stdout, r.stderr)
+
+# ---------------------------------------------------------------------------
+# The startup banner names the port this process actually binds
+# ---------------------------------------------------------------------------
+# The banner printed PORT (default 8080) while `python app.py` was hardcoded
+# to 5000, so running the dev server with PORT set announced a URL nothing
+# was listening on. One constant feeds both now.
+r = run("""
+import app
+# Imported, not run directly - the served (gunicorn) case, unchanged.
+assert app.DEV_SERVER is False, app.DEV_SERVER
+assert app.LISTEN_PORT == '5099', app.LISTEN_PORT
+print('OK')
+""", local_env(PORT="5099"))
+check("a served install binds PORT, and the banner prints that",
+      r.returncode == 0 and "OK" in r.stdout)
+if r.returncode != 0:
+    print(r.stdout, r.stderr)
+
+r = run("""
+import app
+assert app.LISTEN_PORT == '8080', app.LISTEN_PORT   # served default, unchanged
+print('OK')
+""", local_env())
+check("without PORT, a served install still defaults to 8080",
+      r.returncode == 0 and "OK" in r.stdout)
+if r.returncode != 0:
+    print(r.stdout, r.stderr)
+
+# The banner is printed at import; check the text, not just the value.
+r = run("""
+import app
+print('OK')
+""", local_env(PORT="5123"))
+check("the banner prints the port that was asked for",
+      r.returncode == 0 and "127.0.0.1:5123/login" in r.stdout)
+if r.returncode != 0:
+    print(r.stdout, r.stderr)
+
+# The dev server must IGNORE PORT and stay on 5000. README's quick start
+# copies .env.example, which carries PORT=8080 - reading it here would move
+# `python app.py` off the port that same page tells you to open. Run as a
+# FILE, not -c, so __name__ is "__main__" the way it is for a real
+# `python app.py`; app.run() is never reached because this exits first.
+_probe = os.path.join(tempfile.mkdtemp(), "app.py")
+with open(_probe, "w") as fh:
+    fh.write("import runpy, sys, os" + chr(10)
+             + "sys.path.insert(0, " + repr(REPO) + ")" + chr(10)
+             + "import builtins" + chr(10)
+             + "src = open(os.path.join(" + repr(REPO) + ", 'app.py'),"
+               " encoding='utf-8').read()" + chr(10)
+             + "src = src.split('if __name__ ==')[0]" + chr(10)
+             + "ns = {'__name__': '__main__', '__file__':"
+               " os.path.join(" + repr(REPO) + ", 'app.py')}" + chr(10)
+             + "os.chdir(" + repr(REPO) + ")" + chr(10)
+             + "exec(compile(src, 'app.py', 'exec'), ns)" + chr(10)
+             + "assert ns['DEV_SERVER'] is True, ns['DEV_SERVER']" + chr(10)
+             + "assert ns['LISTEN_PORT'] == '5000', ns['LISTEN_PORT']" + chr(10)
+             + "print('OK')" + chr(10))
+_env = local_env(PORT="8080")
+_env["PYTHONPATH"] = os.pathsep.join([HERE, REPO])
+_r = subprocess.run([sys.executable, _probe], cwd=REPO,
+                    env={**os.environ, **_env}, capture_output=True, text=True)
+check("the dev server ignores PORT and stays on 5000, so copying .env.example "
+      "does not move it off the port the README names",
+      _r.returncode == 0 and "OK" in _r.stdout)
+if _r.returncode != 0:
+    print(_r.stdout, _r.stderr)
+
+# And nothing binds a port that bypasses the constant.
+_app_src = open(os.path.join(REPO, "app.py"), encoding="utf-8").read()
+check("no hardcoded bind port is left in app.py",
+      "port=5000" not in _app_src and _app_src.count("int(LISTEN_PORT)") == 2)
+
+
 print()
 if failures:
     print(f"{len(failures)} FAILURE(S):")

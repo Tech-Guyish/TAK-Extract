@@ -482,8 +482,13 @@ try:
               pg.locator("#recordCompanionBtn").count() == 1, comp[:200])
         pg.locator("#recordCompanionBtn").click(); pg.wait_for_timeout(1200)
         comp = pg.locator("#companionBox").inner_text()
+        # "authenticated: admin", not a bare "admin": a verified session is
+        # written the way identify() writes every other actor, which is what
+        # the audit page reads as verified and what the export and re-check
+        # lines on this same page have always shown.
         check("companion: Record writes it to the audit log; the box now shows who and when",
-              "Recorded in the audit log" in comp and "by admin" in comp and "3 of 3 package positions matched" in comp,
+              "Recorded in the audit log" in comp and "by authenticated: admin" in comp
+              and "3 of 3 package positions matched" in comp,
               comp[:300])
         txt_bad = compare_with(RECHECK_RAW_BAD)
         check("a re-check raw file with one moved row: the exact check names the id and field, tab red",
