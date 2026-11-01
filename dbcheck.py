@@ -37,7 +37,7 @@ reaches Postgres literally. tests/test_dbcheck.py asserts it.
 import hashlib
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import exports
 
@@ -599,7 +599,49 @@ def _privileges(conn):
     return items
 
 
-def _liveness(conn, previous_max=None):
+# How long must have passed since the PREVIOUS check before 'no new rows'
+# means anything. Without this, liveness compared only whether the newest
+# row had advanced, with no regard for how far apart the two checks were -
+# so running the check twice a couple of minutes apart warned on a
+# perfectly healthy server, and so would any check that happened to run
+# during a quiet night. A warning that fires for innocent reasons is one
+# people learn to skip, which costs more than the case it was meant to
+# catch. Found running it twice in two minutes on a live install.
+LIVENESS_MIN_GAP = timedelta(minutes=30)
+
+
+def _parse_checked_utc(value):
+    """The ts_utc a previous check recorded, as an aware datetime, or
+    None if it is missing or in a shape this version does not write
+    (rows predating the column, a hand-edited database)."""
+    if not value:
+        return None
+    try:
+        return datetime.strptime(str(value), "%Y-%m-%d %H:%M:%SZ").replace(
+            tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        return None
+
+
+def _short(delta):
+    """A timedelta as a person would say it. The raw repr reads
+    "0:18:00.427055", which is precision nobody needed in a sentence about
+    whether a server is still writing."""
+    seconds = int(delta.total_seconds())
+    if seconds < 0:
+        return "an unknown time"
+    if seconds < 90:
+        return f"{seconds} second{'' if seconds == 1 else 's'}"
+    minutes = seconds // 60
+    if minutes < 90:
+        return f"{minutes} minute{'' if minutes == 1 else 's'}"
+    hours = minutes // 60
+    if hours < 48:
+        return f"{hours} hour{'' if hours == 1 else 's'}"
+    return f"{hours // 24} days"
+
+
+def _liveness(conn, previous_max=None, previous_checked_utc=None):
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT min(servertime), max(servertime), now() FROM cot_router;")
@@ -610,13 +652,30 @@ def _liveness(conn, previous_max=None):
         return [_item("liveness", "the server is still writing", WARN,
                       "cot_router holds no rows at all")], None
     age = now - newest
-    detail = f"oldest {oldest}, newest {newest} ({age} ago)"
+    # {age} alone rendered as "0:18:00.427055 ago" - precision nobody
+    # needed in a sentence about whether a server is still writing.
+    detail = f"oldest {oldest}, newest {newest} ({_short(age)} ago)"
     if previous_max:
-        moved = str(newest) != str(previous_max)
-        detail += ("; new rows since the last check" if moved
-                   else f"; NOTHING new since the last check, which saw {previous_max}")
+        if str(newest) != str(previous_max):
+            detail += "; new rows since the last check"
+            return [_item("liveness", "the server is still writing",
+                          OK, detail)], str(newest)
+
+        # Nothing new. Whether that is worth saying depends entirely on
+        # how long ago the last check ran.
+        since = _parse_checked_utc(previous_checked_utc)
+        gap = (now - since) if since else None
+        if gap is not None and gap < LIVENESS_MIN_GAP:
+            detail += (f"; nothing new since the last check {_short(gap)} ago"
+                       f" - too short a gap to read anything into")
+            return [_item("liveness", "the server is still writing",
+                          OK, detail)], str(newest)
+
+        detail += f"; NOTHING new since the last check, which saw {previous_max}"
+        if gap is not None:
+            detail += f" {_short(gap)} ago"
         return [_item("liveness", "the server is still writing",
-                      OK if moved else WARN, detail)], str(newest)
+                      WARN, detail)], str(newest)
     return [_item("liveness", "the server is still writing", OK, detail)], str(newest)
 
 
@@ -624,7 +683,8 @@ def _liveness(conn, previous_max=None):
 # The whole check
 # ---------------------------------------------------------------------------
 
-def run(conn, baseline=None, previous_max=None, recent_identities=None, quick=False):
+def run(conn, baseline=None, previous_max=None, recent_identities=None, quick=False,
+        previous_checked_utc=None):
     """Everything, against an open connection. Returns a report dict.
 
     Connection-injected like exports.build_package, so the CLI, a Flask
@@ -744,7 +804,7 @@ def run(conn, baseline=None, previous_max=None, recent_identities=None, quick=Fa
                 "channels:probe", "channel-filtered pass", SKIP,
                 "no channels defined, so the bit-string predicate was not exercised"))
 
-    live_items, newest = _liveness(conn, previous_max)
+    live_items, newest = _liveness(conn, previous_max, previous_checked_utc)
     report["sections"].append({"name": "Liveness", "items": live_items})
     report["newest_servertime"] = newest
 
@@ -841,18 +901,22 @@ def save_baseline(sqlite_path, fp, created_by, note=""):
     con.close()
 
 
-def last_newest_servertime(sqlite_path):
-    """What the previous check saw as the newest row, so liveness can say
-    "the server has written since" rather than guess at an age threshold."""
+def previous_check_marks(sqlite_path):
+    """(newest row the previous check saw, when that check ran).
+
+    Liveness needs both. What the previous check saw answers "has the
+    server written since"; when it ran answers "is that silence long
+    enough to mean anything" - and without the second, two checks run a
+    few minutes apart warn about a server that is perfectly healthy."""
     try:
         con = sqlite3.connect(sqlite_path)
-        row = con.execute("""SELECT max_servertime FROM schema_checks
+        row = con.execute("""SELECT max_servertime, ts_utc FROM schema_checks
                               WHERE max_servertime IS NOT NULL
                               ORDER BY id DESC LIMIT 1;""").fetchone()
         con.close()
-        return row[0] if row else None
+        return (row[0], row[1]) if row else (None, None)
     except Exception:
-        return None
+        return (None, None)
 
 
 def record_check(sqlite_path, report, actor=None, where_run=None, tool_version=None):
@@ -1046,8 +1110,10 @@ def main(argv=None):
             recent = [i for i in app.recent_source_identities() if i]
         except Exception:
             pass
+        prev_max, prev_checked = previous_check_marks(sqlite_path)
         report = run(conn, baseline=baseline,
-                     previous_max=last_newest_servertime(sqlite_path),
+                     previous_max=prev_max,
+                     previous_checked_utc=prev_checked,
                      recent_identities=recent, quick=args.quick)
     finally:
         try:

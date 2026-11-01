@@ -208,9 +208,16 @@ stop being true.
 the Compose **v2** plugin (`docker compose`, a space, not the hyphenated v1
 `docker-compose`). `setup.sh` refuses to run without them.
 
-- **Ubuntu 22.04**: don't use `apt install docker.io docker-compose` — that
-  pulls Compose v1. Install from [Docker's own apt repository](https://docs.docker.com/engine/install/ubuntu/),
+- **Ubuntu 22.04 and 24.04**: don't use `apt install docker.io docker-compose`
+  — the `docker-compose` package is still Compose **v1** (1.29.2) on both
+  releases, and `setup.sh` will refuse to run against it. Install from
+  [Docker's own apt repository](https://docs.docker.com/engine/install/ubuntu/),
   which includes `docker-compose-plugin` (v2) alongside Docker Engine.
+  On **24.04 only** there is also a distro-packaged alternative,
+  `docker-compose-v2` (2.24.6, in universe), which provides `docker compose`
+  as a plugin and works with this project; 22.04 has no equivalent. Docker's
+  own repository is still the better choice if you want current versions,
+  since the distro package tracks whatever shipped with the release.
 - **Rocky Linux 9 / RHEL 9**: the distro default container engine here is
   **Podman, not Docker** — and this project's scripts call `docker compose`
   specifically, which Podman does not provide (its equivalent is the

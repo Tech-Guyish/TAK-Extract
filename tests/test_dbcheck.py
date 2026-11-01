@@ -18,6 +18,7 @@ Run with: python tests/test_dbcheck.py
 import json
 import os
 import re
+import tempfile
 import sys
 
 # This file lives in tests/; dbcheck.py and exports.py are in the checkout above.
@@ -289,6 +290,157 @@ shell = open(os.path.join(REPO, "connect-database.sh"), encoding="utf-8").read()
 block = shell[shell.index("grant_tables=\""):]
 block = block[len("grant_tables=\""):block.index("\"", len("grant_tables=\""))]
 installer_tables = tuple(sorted(block.split()))
+# ---------------------------------------------------------------------------
+# The TLS private key is never created world-readable
+# ---------------------------------------------------------------------------
+# _restrict_key() chmods it to 0600, but openssl created it at the process
+# umask first, so the key existed readable between those two moments. The
+# umask is tightened around the call now, and restored afterwards - this
+# process goes on to write the audit database and the certificate, which
+# should keep normal modes.
+import tls as _tls
+
+_calls = []
+_real_run = _tls.subprocess.run
+_real_umask = os.umask
+
+
+def _spy_umask(value):
+    # Record the intent. Reading the umask back is not portable: Windows
+    # keeps only the write bit, so os.umask(0o077) reads back as 0 there
+    # and an observation-based test would fail on the developer's own
+    # machine while passing in CI. What matters is that the call is made
+    # with the right mask, and that something restores it afterwards.
+    _calls.append(value)
+    return _real_umask(value)
+
+
+def _spy_run(*a, **k):
+    _calls.append("RUN")
+    class _R:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+    return _R()
+
+
+_tls.subprocess.run = _spy_run
+os.umask = _spy_umask
+try:
+    _tmp = tempfile.mkdtemp()
+    _cert = os.path.join(_tmp, "c.pem")
+    _key = os.path.join(_tmp, "k.pem")
+    open(_key, "w").close()      # _restrict_key chmods a real path
+    _err = None
+    try:
+        _tls.ensure_self_signed_cert(_cert, _key, "192.0.2.1")
+    except Exception as _e:
+        _err = _e
+finally:
+    _tls.subprocess.run = _real_run
+    os.umask = _real_umask
+
+check("the TLS key is generated under a 0077 umask, so it is never created readable",
+      len(_calls) >= 2 and _calls[0] == 0o077 and "RUN" in _calls
+      and _calls.index(0o077) < _calls.index("RUN"))
+check("the umask is restored after generation, so later files keep normal modes",
+      "RUN" in _calls and any(not isinstance(c, str) and c != 0o077
+                              for c in _calls[_calls.index("RUN"):]))
+if not (_calls and _calls[0] == 0o077):
+    print(f"       umask/run call order: {_calls!r}  error: {_err!r}")
+
+
+
+
+# ---------------------------------------------------------------------------
+# Liveness weighs how long ago the previous check ran
+# ---------------------------------------------------------------------------
+# It used to compare only whether the newest row had advanced, with no
+# regard for the gap between the two checks - so running the check twice a
+# couple of minutes apart warned about a healthy server, and so would any
+# check that landed during a quiet night. Caught on a live install by
+# running it twice in two minutes.
+from datetime import datetime, timedelta, timezone
+
+_NOW = datetime(2026, 11, 1, 19, 23, 21, tzinfo=timezone.utc)
+_NEWEST = datetime(2026, 11, 1, 19, 5, 20, tzinfo=timezone.utc)
+_OLDEST = datetime(2026, 7, 27, 20, 43, 25, tzinfo=timezone.utc)
+
+
+class _LiveCursor:
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def execute(self, *a, **k): pass
+    def fetchone(self): return (_OLDEST, _NEWEST, _NOW)
+
+
+class _LiveConn:
+    def cursor(self): return _LiveCursor()
+
+
+def _stamp(dt):
+    return dt.strftime("%Y-%m-%d %H:%M:%SZ")
+
+
+def _live(previous_max, previous_checked_utc):
+    items, _ = dbcheck._liveness(_LiveConn(), previous_max, previous_checked_utc)
+    item = items[0]
+    return item.get("status") or item.get("state"), item.get("detail", "")
+
+_s, _d = _live(None, None)
+check("liveness: a first run with nothing to compare against is ok", _s == dbcheck.OK)
+
+_s, _d = _live("2026-11-01 18:00:00+00:00", _stamp(_NOW - timedelta(hours=2)))
+check("liveness: rows arrived since the last check -> ok",
+      _s == dbcheck.OK and "new rows since the last check" in _d)
+
+# The regression this whole section exists for.
+_s, _d = _live(str(_NEWEST), _stamp(_NOW - timedelta(minutes=2)))
+check("liveness: nothing new, but the last check was 2 minutes ago -> ok, not a warning",
+      _s == dbcheck.OK and "too short a gap" in _d)
+
+_s, _d = _live(str(_NEWEST), _stamp(_NOW - timedelta(minutes=29)))
+check("liveness: still ok just inside the threshold (29 minutes)", _s == dbcheck.OK)
+
+_s, _d = _live(str(_NEWEST), _stamp(_NOW - timedelta(minutes=31)))
+check("liveness: nothing new and the last check was 31 minutes ago -> warn",
+      _s == dbcheck.WARN and "NOTHING new" in _d)
+
+_s, _d = _live(str(_NEWEST), _stamp(_NOW - timedelta(hours=6)))
+check("liveness: a long silence still warns, and says how long",
+      _s == dbcheck.WARN and "6 hours ago" in _d)
+
+# An unreadable or absent timestamp must fall back to warning, not to
+# silence - a row written by an older version must not quietly disable the
+# check it predates.
+_s, _d = _live(str(_NEWEST), "not-a-date")
+check("liveness: an unparseable previous timestamp still warns", _s == dbcheck.WARN)
+_s, _d = _live(str(_NEWEST), None)
+check("liveness: no recorded previous timestamp still warns", _s == dbcheck.WARN)
+
+check("liveness: the threshold is stated in one place",
+      isinstance(dbcheck.LIVENESS_MIN_GAP, timedelta)
+      and dbcheck.LIVENESS_MIN_GAP == timedelta(minutes=30))
+
+# The age used to render as "0:18:00.427055 ago".
+check("durations read as a person would say them",
+      dbcheck._short(timedelta(seconds=1)) == "1 second"
+      and dbcheck._short(timedelta(minutes=18)) == "18 minutes"
+      and dbcheck._short(timedelta(hours=6)) == "6 hours"
+      and dbcheck._short(timedelta(days=3)) == "3 days")
+check("the liveness line reports a readable age, not a raw timedelta",
+      "(18 minutes ago)" in _d and "0:18:00" not in _d)
+
+# previous_check_marks returns both halves, and survives a database it
+# cannot read. The path goes in a temp directory, not the repo: sqlite3
+# CREATES a file it is pointed at, so naming a path here would litter the
+# working tree with an empty database on every run.
+_marks = dbcheck.previous_check_marks(
+    os.path.join(tempfile.mkdtemp(), "no-such-file.sqlite"))
+check("previous_check_marks returns a pair even when it cannot read anything",
+      _marks == (None, None))
+
+
 # ---------------------------------------------------------------------------
 # The installers have to be runnable from a fresh clone
 # ---------------------------------------------------------------------------
