@@ -17,13 +17,32 @@ name: Regression tests
 # runs 3.12, so both have to keep working. requirements.txt pins Flask but
 # NOT its transitive dependencies - Werkzeug, Jinja2, itsdangerous - so the
 # day one of those drops 3.10 support, pip will quietly resolve something
-# different there than it does on 3.12. This matrix is what catches that on
-# a push rather than in somebody's install.
+# different there than it does on 3.12. This matrix is what catches that
+# rather than somebody's install.
+#
+# It runs weekly as well as on a push, and the weekly run is the one that
+# matters for the unpinned dependencies. Pushes here are irregular - this
+# file went three weeks without one - while pip resolves Werkzeug, Jinja2,
+# MarkupSafe, click, blinker and itsdangerous fresh on every install. So
+# the set that gets installed on a server rebuild can differ from the set
+# anything was last tested against, and without a schedule the first sign
+# of that is a rebuild failing on the box rather than a job failing here.
+#
+# Friday, to keep a day between it and the other two scheduled runs
+# (pip-audit Monday, CodeQL Wednesday, both 13:00 UTC). Same reasoning as
+# the note in codeql.yml: two failures arriving together are easier to
+# conflate than two arriving apart.
+#
+# GitHub disables scheduled workflows after 60 days with no repository
+# activity, and emails the owner first. On a quiet month that is worth
+# knowing about: the schedule stops silently if that email is missed.
 on:
   push:
     branches: [master]
   pull_request:
     branches: [master]
+  schedule:
+    - cron: "0 13 * * 5"  # every Friday, 13:00 UTC
   workflow_dispatch:
 
 # Read-only, explicitly. Without a permissions: block a workflow inherits

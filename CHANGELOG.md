@@ -5,6 +5,12 @@ at v0.4.0 — entries before that predate it and carry no version number.
 
 ---
 
+### Unreleased
+
+- 🔧 `Improvement` - **The regression suites run weekly, not only on a push.** `requirements.txt` pins Flask but not Werkzeug, Jinja2, MarkupSafe, click, blinker or itsdangerous, so pip resolves those fresh on every install — meaning a server rebuild can install a set nothing was ever tested against. Pushes here are irregular (this file went three weeks without one), so the matrix only caught drift when something happened to be pushed. It now also runs every Friday at 13:00 UTC, a day clear of the Monday pip-audit and Wednesday CodeQL runs, so a dependency that breaks the 3.10 floor or the 3.12 container shows up as a failed job rather than as a failed rebuild on the server.
+
+---
+
 ### v1.21.6 (BETA) — 2026-11-01
 
 - 🐛 `Bug Fix` - **The database check stops warning that a healthy server has gone quiet.** Liveness compared only whether the newest row had advanced since the previous check, with no regard for how far apart the two checks were — so running it twice a few minutes apart warned about a server that was writing normally, and so would any check that happened to land during a quiet night. It now weighs the gap: nothing new is only worth reporting once at least 30 minutes have passed since the last check, and below that it says so plainly rather than raising a warning. An unreadable or missing previous timestamp still warns, so a row written by an older version cannot quietly switch the check off. The line also reports a readable age — *18 minutes ago* rather than *0:18:00.427055 ago*. Found by running the check twice in two minutes on a live install.
